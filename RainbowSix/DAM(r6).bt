@@ -1,0 +1,44 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template
+//
+//      File: CHR.bt
+//   Authors: AlexKimov
+//   Version: 1.0
+//   Purpose: Rainbow Six DAM file
+// 
+//   History: 
+//------------------------------------------------
+
+UINT FrameCount; 
+
+struct {
+  struct {
+    UINT BonesCount; // 18
+    struct { 
+      FLOAT A;
+      FLOAT B;
+      FLOAT C;
+    } POSITION;
+    typedef struct {
+      FLOAT X;
+      FLOAT Y;
+      FLOAT Z;
+      FLOAT W;
+    } ROTATION <name="Quat">;
+    ROTATION Rot[BonesCount];
+  } Frames[FrameCount] <optimize=false, name="Frame">;
+} MOTION_DATA;
+
+struct {
+  UINT Length; // 
+  char Text[Length]; // 
+} Name <name="Name">;
+
+struct {
+  FLOAT Unknown;
+  FLOAT AnimationSpeed;
+  FLOAT Speed <name="in-game speed of the character">;
+  FLOAT Unknown;
+  FLOAT Unknown;
+  FLOAT Unknown;
+} ANIMATION_PARAMETERS;

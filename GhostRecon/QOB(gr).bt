@@ -1,0 +1,254 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template
+//
+//      File: QOB.bt
+//   Authors: Alexander Evdokimov
+//   Version: 1.1
+//   Purpose: Ghost Recon QOB file
+//
+//   History: 
+//
+//   2019.02 v1.2
+//   2019.01 v1.1
+//   2018.11 v1.0 
+//   2016.10 v0.2 initial release
+//------------------------------------------------
+
+typedef enum <ubyte> {
+  no = 0,
+  yes = 1
+} BOOL; // bool data type
+
+typedef struct { 
+  UINT Length;  
+  char Text[Length];
+} CSTRING; 
+
+typedef struct {
+  UINT SectionSize;
+  UINT ID;
+  struct {    
+    CSTRING Name <name="Version">; 
+    UINT Value;
+  } VERSION;    
+  CSTRING Name <name="Name">; 
+} SECTION_HEADER <name="Header">;
+
+typedef struct { 
+  FLOAT x;
+  FLOAT y;  
+} POINT2;
+
+typedef struct {     
+  UINT16 x;
+  UINT16 y;
+  UINT16 z;
+} VECTOR_SHORT; 
+
+typedef struct {     
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+} VECTOR3; 
+
+typedef struct {     
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+  FLOAT w;  
+} VECTOR4; 
+
+//--------------------
+// File header
+// --------------------
+
+CSTRING Name <name="BeginModel">;   
+
+//--------------------
+// MATERIALLIST
+// --------------------
+
+typedef struct {
+  FLOAT Red; 
+  FLOAT Green; 
+  FLOAT Blue; 
+  FLOAT Alpha;        
+} COLOR;
+
+typedef struct {
+  SECTION_HEADER Header;
+  struct { 
+    FLOAT Opacity;
+    UINT Unknown;
+    COLOR Ambient; 
+    COLOR Diffuse;   
+    COLOR Specular;
+    FLOAT SpecularLevel; //o.o5
+    BOOL twoSide;
+  } PARAMETERS;
+} MATERIAL <name=MaterialName>;
+
+typedef struct {
+  SECTION_HEADER Header;
+  if (Header.VERSION.Value > 1)
+      BOOL Unknown;
+  CSTRING Name <name="Texture .rsb file name">;   
+  struct { 
+    UINT TransparencyType;  // 0 2 3
+    UINT IsTiled; // 1 - u-tile, 2 - v-tile, 3 - both none
+    FLOAT SelfIllumination; // 0
+  } PARAMETERS; 
+} TEXTURE <name=TextureName>;
+
+string MaterialName(MATERIAL &material) {
+  return "Name: " + material.Header.Name.Text;
+} 
+
+string TextureName(TEXTURE &texture) {
+  return "FileName: " + texture.Header.Name.Text;
+} 
+
+struct {  
+  SECTION_HEADER Header;  
+  UINT Count <name="Number of materials">;
+  typedef struct (int arraySize) {
+    MATERIAL array[arraySize] <optimize=false>;
+  } MATERIALS; 
+  MATERIALS Materials(Count) <name="Materials">; 
+  UINT Count <name="Number of textures">;
+  if (Count > 0) 
+  {
+    typedef struct (int arraySize) {
+      TEXTURE array[arraySize] <optimize=false>;
+    } TEXTURES;    
+    TEXTURES TextureArray(Count) <name="Textures">; 
+  };
+} MATERIAL_LIST <name="Material List">;
+
+//--------------------
+// GEOMETRYLIST
+// --------------------
+
+struct {   
+  SECTION_HEADER Header; 
+  UINT Count <name="Number of objects">;
+  typedef struct {
+    SECTION_HEADER Header;
+    if (Header.VERSION.Value > 6)
+    {
+      BOOL DarkMapped <name="DarkMapped">; 
+      BOOL CastShadows <name="CastShadows">; 
+    };       
+    struct {
+      UINT Count <name="Number of vertexes">;    
+      typedef struct (int arraySize) {
+        VECTOR3 array[arraySize];
+      } VERTEXES;     
+      VERTEXES Vertexes(Count) <name="Vertexes">; 
+    } VERTEXES_SECTION <name="Vertex section">;
+
+    UINT Count <name="Number of meshes">; 
+    typedef struct {
+      struct {
+        if (Header.VERSION.Value > 6)
+        {
+          BYTE Unknown; // 1
+          BYTE DetailedDarkmap;
+          BYTE DetailTexture;
+        }
+        else 
+        {
+          BYTE Unknown[6];
+        }
+
+        UINT MaterialIndex;
+        UINT isTextured;
+        if (isTextured > 0) 
+        {
+          UINT TextureIndex;
+          if (DetailTexture > 0)
+            UINT DetailTextureIndex;
+        };
+        struct {
+          UINT Unknown;     
+          UINT SelfIlluminationMap;
+          UINT SpecularMap;
+          UINT BumpMap;
+          UINT ReflectionMap;
+          UINT MapCount;
+        } MAPPING;
+      } TEXTURE_PARAMETERS;
+    
+      struct {
+        UINT Count <name="Number of faces">;     
+        typedef struct (int arraySize) {
+          VECTOR4 array[arraySize];
+        } NORMALS1;          
+        NORMALS1 Normals(Count) <name="Normals??">;           
+        typedef struct (int arraySize) {
+          VECTOR_SHORT array[arraySize];
+        } FACE_INDEXES;          
+        FACE_INDEXES FaceIndexes(Count) <name="Indexes">;    
+        typedef struct (int arraySize) {
+          VECTOR_SHORT array[arraySize];
+        } TEXTURE_INDEXES;          
+        TEXTURE_INDEXES TextureIndexes(Count) <name="Indexes">;    
+ 
+        UINT VertexCount;
+        UINT TextureCount;         
+        typedef struct (int arraySize) {
+          VECTOR3 array[arraySize];
+        } NORMALS2;       
+        NORMALS2 Normals(VertexCount) <name="Normals">;        
+        typedef struct (int arraySize) {
+          POINT2 array[arraySize];
+        } UVs;        
+        UVs TextureCoordinates(VertexCount*TextureCount) <name="Texture coordinates">;           
+        typedef struct (int arraySize) {
+          COLOR array[arraySize] <optimize=false>;
+        } FACE_COLOR; 
+        FACE_COLOR FaceColor(VertexCount) <name="Faces colors">; 
+      } FACE_PARAMETERS;   
+    } MESH <name="Mesh">;
+    typedef struct (int arraySize) {
+      MESH array[arraySize] <optimize=false>;
+    } MESHES;     
+    MESHES Meshes(Count) <name="Meshes">; 
+  } OBJECT;
+  typedef struct (int arraySize) {
+    OBJECT array[arraySize] <optimize=false>;
+  } OBJECTS;     
+  OBJECTS Objects(Count) <name="Objects">;   
+} GEOMETRY_LIST  <name="Geometry List">;
+
+//--------------------
+// POINTS
+// --------------------
+
+typedef struct {
+  CSTRING Name;
+  struct {
+    VECTOR3 X;
+    VECTOR3 Y;
+    VECTOR3 Z;
+    VECTOR3 Position;
+  } TRANSFORMATION_MATRIX;
+} POINT <name=pointName>;
+
+struct {
+  UINT PointCount;
+  if (PointCount > 0) 
+  {   
+    typedef struct (int arraySize) {
+      POINT array[arraySize] <optimize=false>; 
+    } POINTS <optimize=false>;   
+    POINTS Points(PointCount) <optimize=false, name="Points">; 
+  };
+} POINT_LIST <name="Point List">;
+
+string pointName(POINT &point) 
+{
+  return "Name: " + point.Name.Text;
+} 
+
+CSTRING Name <name="EndModel">;

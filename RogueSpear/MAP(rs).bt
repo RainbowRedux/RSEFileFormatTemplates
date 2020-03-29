@@ -1,0 +1,737 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template ------------
+//
+//      File: MAP.bt
+//   Authors: Alexander Evdokimov
+//   Version: 0.8
+//   Purpose: Rogue Spear MAP file 
+// File Mask: *.map
+// 
+//   History: 
+//   
+//------------------------------------------------
+
+struct {
+  local byte check_enable = 0; // 1 - enable value checking | 0 - disable
+} VARS <hidden=true>;
+
+void Check(int value, int number, string str) {
+  if (VARS.check_enable) {
+    local string s1, s2;
+    SPrintf( s1, "%d", (int)value );
+    SPrintf( s2, "%d", (int)number );
+     if (value != number) {
+      MessageBox( idYes, "Warning", str + ": " + s1 + " not " + s2);
+      break;
+     }; 
+  }; 
+};
+
+typedef struct { 
+  UINT Length;  
+  char Text[Length];
+} CSTRING; 
+
+typedef struct {
+  UINT SectionSize;
+  UINT ID;
+  CSTRING Name; 
+  if (Name.Text == "Version") 
+  {
+    UINT value;
+    CSTRING Name;
+  }; 
+} SECTION_HEADER <name="Header">;
+
+typedef struct {
+  UINT ID;
+  CSTRING Name;  
+  if (Name.Text == "Version") 
+  {
+    UINT value;
+    CSTRING Name;
+  }; 
+} SECTION_HEADER_SHORT <name="Header">;
+
+typedef struct {
+  struct { 
+    FLOAT x;        
+    FLOAT y;
+    FLOAT z;
+  } XAxis;
+  struct { 
+    FLOAT x;
+    FLOAT y;
+    FLOAT z;
+  } YAxis;
+  struct {
+    FLOAT x;
+    FLOAT y;
+    FLOAT z;
+  } ZAxis;
+  struct {
+     FLOAT Y;
+     FLOAT X;
+     FLOAT Z;
+  } Position;
+} TRANSFORMATION_MATRIX;  
+
+typedef enum <ubyte> {
+  no,
+  yes
+} BOOL; // bool data type
+
+typedef struct {
+  FLOAT Red;
+  FLOAT Green;
+  FLOAT Blue;
+  FLOAT Alpha;  
+} COLOR_4F;
+
+typedef enum <uint> {
+  Opaque = 0, 
+  Wrap = 1,
+  Clamp = 3
+} TEXTURE_ADDRESS_MODE <name="Texture address mode">;
+
+//------------------------------------------------
+// Flie header
+//------------------------------------------------
+
+struct {
+ CSTRING Name <name="File ID (Signature)">;
+ time_t CreateDate <name="File Creation Date">;
+} MAP_HEADER <name="MAP Header", fgcolor=cBlack, bgcolor=0xccff66>;
+
+//------------------------------------------------
+// Section - MaterialList 
+//------------------------------------------------
+
+typedef struct {
+  SECTION_HEADER Header <name="Material Section Header">;
+  CSTRING Name <name="Texture filename">;  
+
+  struct { 
+    FLOAT Opacity; // 0..1
+    UINT EmissiveStrength; 
+    TEXTURE_ADDRESS_MODE AddressMode;
+    COLOR_4F Ambient; 
+    COLOR_4F Diffuse;   
+    COLOR_4F Specular;   
+    FLOAT SpecularLevel;
+    BOOL twoSided <name="2-Sided">;
+  } PARAMETERS;
+} MATERIAL <name=MaterialName>;
+
+string MaterialName(MATERIAL &material) {
+  return "Name: " + material.Header.Name.Text + " ";
+} 
+
+
+struct {  
+  SECTION_HEADER Header <name="1.0 MaterialList section header">;  
+  
+  struct {
+    UINT Count <name="Number of Materials">;
+    typedef struct (int arraySize) {
+      MATERIAL array[arraySize] <optimize=false>;
+    } MATERIAL_ARRAY; 
+    MATERIAL_ARRAY MaterialArray(Count) <name="Materials">; 
+
+  } MATERIALS <name="1.1 Materials section">;
+} MAPMATERIALLIST <name="1. MaterialList section">;
+
+//------------------------------------------------
+// Section - GeometryList 
+//------------------------------------------------
+
+typedef enum <uint> {
+  Carpet,
+  Concrete,
+  Wood,
+  Metal,
+  Asphalt,
+  Sand,
+  LowGrass,
+  HighGrass,
+  Puddle,
+  Water,
+  Drywall,
+  ThinMetal,
+  ThickMetal,
+  MetalGasTank,
+  SteamPipe,
+  ElectricalPanel,
+  Snow,
+  SafetyGlass,
+  BulletResistantGlass,
+  Ice,
+  Mud,
+  Glass,
+  Foliage,
+  Gravel,
+  GlassShards,
+  CreakyWood,
+  DeepSand,
+  BakedClay,
+  unset = 4294967295
+} SURFACE_PROPERTY;
+
+typedef struct {
+  CSTRING Name[Length]; //
+  BYTE FloorPolygon; // 2 - non colidable 2d, 10 - non colidable 3d, 26 - 3
+  BYTE CarvingBoundary; // 1 - Carving Boundary  2 - cannot carve
+  BYTE MN; // 0
+  Check(MN, 0, "POLYGON_PARAMETERS 1");
+  BYTE MN; // 0 
+  Check(MN, 0, "POLYGON_PARAMETERS 2");
+  SURFACE_PROPERTY SurfaceProperty <name="Surface Property">; // 0 - 12
+} POLYGON_PROPERTIES <name=PPName>; 
+
+string PPName(POLYGON_PROPERTIES &polygonproperties) {  
+  return "Name: " + polygonproperties.Name;
+} 
+
+typedef struct {  
+  SECTION_HEADER Header <name="Section header">; 
+  SECTION_HEADER Header2 <name="Object section header">; 
+
+struct {
+  UINT VertexCount;  
+  typedef struct {     
+    FLOAT X;
+    FLOAT Y;
+    FLOAT Z;
+   } VERTEX <name="VERTEX">;
+  typedef struct (int arraySize) {
+    VERTEX array[arraySize] <optimize=false>;
+  } VERTEX_ARRAY; 
+  VERTEX_ARRAY VertexArray(VertexCount) <name="Object vertices array">; 
+} VERTICES <name="Object vertices section">;
+
+struct {
+  UINT Count;
+  typedef struct {
+  UINT MN;
+  struct {
+    UINT FaceCount; 
+    typedef struct {     
+      FLOAT X;
+      FLOAT Y;
+      FLOAT Z;
+      FLOAT DistanceOriginFace; // Distance from object origin to face, sign defines direction of normal vector
+     } FACE_NORMAL <name="Normal">;
+    typedef struct (int arraySize) {
+      FACE_NORMAL array[arraySize] <optimize=false>;
+    } FACE_NORMAL_ARRAY;  
+    FACE_NORMAL_ARRAY FaceNormalArray(FaceCount) <name="Normals">;
+
+    typedef struct  {
+      UINT16 P1;
+      UINT16 P2;
+      UINT16 P3;
+    } FACE_INDICIES;
+    typedef struct (int arraySize) {
+      FACE_INDICIES array[arraySize] <optimize=false>;
+    } FACE_INDICIES_ARRAY;  
+    FACE_INDICIES_ARRAY FaceIndiciesArray(FaceCount) <name="Faces index array">;
+
+    typedef struct  {
+      UINT16 P1;
+      UINT16 P2;
+      UINT16 P3;
+    } TEXTURE_INDICIES <name="Texture indicies">;
+    typedef struct (int arraySize) {
+      TEXTURE_INDICIES array[arraySize] <optimize=false>;
+    } TEXTURE_INDICIES_ARRAY;  
+    TEXTURE_INDICIES_ARRAY TextureIndiciesArray(FaceCount) <name="Texture index array">;
+  } FACES <name="Faces">;
+
+struct {  
+  UINT VerticiesCount; // ?
+  
+  typedef struct   {
+    FLOAT X;
+    FLOAT Y;
+    FLOAT Z;
+  } NORMAL_COORDINATES <name="Normal">; 
+  typedef struct (int arraySize) {
+    NORMAL_COORDINATES array[arraySize] <optimize=false>;
+  } NORMAL_COORDINATES_ARRAY;
+  NORMAL_COORDINATES_ARRAY NormalCoordinatesArray(VerticiesCount) <name="Normal Coordinates">;
+
+//  if (TextureCount > 0) { 
+    typedef struct   {
+      FLOAT U;
+      FLOAT V;
+    } TEXTURE_UVCOORDINATES <name="UV coordinates">;
+    typedef struct (int arraySize) {
+      TEXTURE_UVCOORDINATES array[arraySize] <optimize=false>;
+    } TEXTURE_UVCOORDINATES_ARRAY; 
+    TEXTURE_UVCOORDINATES_ARRAY TextureCoordinatesArray(VerticiesCount) <name="Texture Coordinates">; 
+//  }; 
+
+
+  typedef struct (int arraySize) {
+   COLOR_4F array[arraySize] <optimize=false>;
+  } FACE_COLOR_ARRAY; 
+
+  FACE_COLOR_ARRAY CoordinatesArray(VerticiesCount) <name="Faces colors">; 
+
+} TEXTURE_VERTICIES <name="Texture data">;
+} OBJECT_DATA;
+
+typedef struct (int arraySize) {
+  OBJECT_DATA array[arraySize] <optimize=false>;
+} OBJECT_DATA_ARRAY; 
+
+OBJECT_DATA_ARRAY MAPObjectsDataArray(Count) <name="Objects data array">; 
+} OBJECTS_DATA <name="Objects data section">;
+ 
+  struct {
+      UINT VerticiesCount;
+      if (VerticiesCount > 0) {
+        typedef struct {     
+          FLOAT X;
+          FLOAT Y;
+          FLOAT Z;
+        } COVERTICE <name="Vertex">;
+        typedef struct (int arraySize) {
+          COVERTICE array[arraySize];
+        } COVERTICE_ARRAY; 
+        COVERTICE_ARRAY COArray(VerticiesCount) <name="Vertex Array">; 
+      };
+
+      UINT FaceCount;
+      if (FaceCount > 0) {
+        typedef struct {     
+          FLOAT X;
+          FLOAT Y;
+          FLOAT Z;
+          FLOAT DistanceOriginFace;
+         } COLLISION_FACE_NORMALS <name="Face Normals">;
+        typedef struct (int arraySize) {
+          COLLISION_FACE_NORMALS array[arraySize];
+        } COLLISION_FACE_NORMALS_ARRAY;
+        COLLISION_FACE_NORMALS_ARRAY MAPCollisionFaceNormalsArray(FaceCount) <name="Face Normals Array">;
+      };
+  } CollisionObjects <name="2D-Collision (non-rendered) objects section">;
+
+  // Objects tagging properties 
+  struct {
+       UINT FCount;
+       typedef struct  {
+         UINT16 p1;
+         UINT16 p2;
+         UINT16 p3;
+         UINT16 FIndex;
+         UINT16 p1;
+         UINT16 p2;
+         UINT16 p3;
+         UINT16 FIndex;
+       } NRO_FACE_INDICIES <name="Face Indicies">;
+       typedef struct (int arraySize) {
+         NRO_FACE_INDICIES array[arraySize] <optimize=false>;
+       } NRO_FACE_INDICIES_ARRAY;  
+       NRO_FACE_INDICIES_ARRAY NROFaceIndiciesArray(FCount) <name="Face Indicies Array">;                 
+  } OBJECTST <name="Section">;
+
+  UINT FFCount;
+  struct {
+    UINT Length;
+    char Text[Length];
+    UINT MN;  
+    UINT Count;  
+     struct  {
+     UINT16 p1;
+     } E_INDICIES[Count] <name="Indixes">;
+  } IND[FFCount] <optimize=false>;
+
+} OBJECT <name=ObjectName>;
+
+string ObjectName(OBJECT &obj) {
+  return "Name: " + obj.Header.Name.Text + " ";
+} 
+
+struct {   //
+  SECTION_HEADER Header <name="GeometryList Header">;  
+  
+  UINT Count <name="Number of objects">;
+
+  typedef struct (int arraySize) {
+    OBJECT array[arraySize] <optimize=false>;
+  } OBJECTS; 
+
+  OBJECTS Objects(Count) <name="Objects">; 
+
+} MAPGEOMETRYLIST <name="2. GeometryList Section">;
+
+//------------------------------------------------------
+//  PortalList Section
+//------------------------------------------------------
+
+struct {
+  SECTION_HEADER Header <name="Header">;   
+
+  UINT Count;
+
+  typedef struct {
+    SECTION_HEADER Header <name="Header">; 
+    
+    UINT VertexCount;
+
+    typedef struct {
+        FLOAT x;
+        FLOAT y;
+        FLOAT z;  
+    } COORDINATES <name="Vertex Coordinates">;
+
+    COORDINATES CoordinatesArray[VertexCount];  
+    
+    UINT RoomNumber;
+    UINT OpositeRoomNumber; 
+  } PORTAL <name=PortalName>;
+
+  typedef struct (int arraySize) {
+    PORTAL array[arraySize] <optimize=false>;
+  } PORTAL_ARRAY;
+
+  PORTAL_ARRAY ObjectNameArray(Count) <name="Portals">;
+  
+} PORTALLIST <name="5. Portal List">;
+
+string PortalName(PORTAL &portal) {
+  return "Name: " + portal.HEADER.Name.Text;
+};
+
+//----------------------------------------------------------------
+// LightList Section
+//---------------------------------------------------------------
+
+typedef struct {
+ // empty
+} LIGHT;  
+
+struct {
+  SECTION_HEADER Header <name="ObjectList Header">; 
+  
+  UINT Count;
+  if (Count > 0) {
+    typedef struct(int arraySize) {
+      LIGHT array[arraySize] <optimize=false>;
+    } LIGHTS;
+    LIGHTS Lights(Count);    
+  }; 
+} LIGHT_LIST <name="5. LightList section">;
+
+//----------------------------------------------------------------
+// ObjectList section
+//---------------------------------------------------------------
+
+typedef struct {
+    SECTION_HEADER Header <name="ObjectList Header">; 
+
+    CSTRING Name; 
+    TRANSFORMATION_MATRIX TM; 
+
+    switch (Header.ID) {
+      // Dynamic Object  (i.e. Furniture, Television, something that can change)
+      case 14: {
+        TRANSFORMATION_MATRIX TM;
+                  
+        CSTRING Name;
+        UINT Unknown; // 0
+        CSTRING Sound1 <name="Sound 1">;;
+        CSTRING Sound2 <name="Sound 2">;
+        CSTRING Sound3 <name="Sound 3">;
+        CSTRING Sound4 <name="Sound 4">; // ??
+        CSTRING CollisionType2d <name="2d Collision Type">; 
+        CSTRING CollisionType3d <name="3d Collision Type">; 
+        CSTRING DestructionAction;
+        CSTRING DestructionCategory; 
+        CSTRING PenetrationType;
+        CSTRING Name;
+        CSTRING DestructionCategory;
+
+        UINT Count;
+        if (Count > 0) { 
+          struct {
+            CSTRING Name;  
+            FLOAT Unknown1[9];
+            UINT Unknown2[2];
+          } PARAMS[Count] <optimize=false>; 
+        } else {
+          UINT Count;
+          CSTRING Name[Count] <optimize=false>;  
+          FLOAT Unknown3[4]; 
+        };
+       };break;
+
+       // object with animation
+       case 15: {
+         TRANSFORMATION_MATRIX TM;
+
+         CSTRING Name;
+         UINT Unknown; // 0, 2
+         CSTRING Sound1 <name="Sound 1">;
+         CSTRING Sound2 <name="Sound 2">;
+         CSTRING Sound3 <name="Sound 3">;
+         CSTRING Sound4 <name="Sound 4">; // ??
+         CSTRING CollisionType2d <name="2d Collision Type">; 
+         CSTRING CollisionType3d <name="3d Collision Type">; 
+         CSTRING DestructionAction;
+         CSTRING DestructionCategory; 
+         CSTRING PenetrationType;
+         CSTRING Name;
+         CSTRING DestructionCategory;
+
+         UINT Unknown; 
+         UINT Count;
+         CSTRING Name[Count] <optimize=false>; 
+ 
+         FLOAT Unknown1[3];
+         UINT Unknown;
+
+         CSTRING Name; 
+         CSTRING Name;
+
+         CSTRING Animation_Type <name="Animation Type">;  
+         struct {
+           FLOAT X;
+           FLOAT Y;
+           FLOAT Z;
+         } DIRECTION <name="Direction">;
+
+         FLOAT Distance;
+         FLOAT Velocity;          
+       }; break;
+
+       //  door / Automatic Door.(uses touchplate to activate - Adtplate)
+       case 16: {
+         TRANSFORMATION_MATRIX TM; 
+
+         CSTRING Name;
+         UINT Unknown; // 0, 2
+         CSTRING Sound1 <name="Sound 1">;
+         CSTRING Sound2 <name="Sound 2">;
+         CSTRING Sound3 <name="Sound 3">;
+         CSTRING Sound4 <name="Sound 4">; // ??
+         CSTRING CollisionType2d <name="2d Collision Type">; 
+         CSTRING CollisionType3d <name="3d Collision Type">; 
+         CSTRING DestructionAction;
+         CSTRING DestructionCategory; 
+         CSTRING PenetrationType;
+         CSTRING Name;
+         CSTRING DestructionCategory;    
+         UINT Unknown;
+
+         UINT AttachementCount;
+         CSTRING AttachementName[AttachementCount] <optimize=false>; 
+
+         FLOAT Unknown2[3];
+ 
+         UINT Count;
+         CSTRING Name1[Count];
+
+         // more sounds?
+         CSTRING Name;
+         CSTRING Name;
+
+         CSTRING Animation_Type <name="Animation Type">;  
+         struct {
+           FLOAT X;
+           FLOAT Y;
+           FLOAT Z;
+         } DIRECTION <name="Direction">;
+
+         FLOAT Distance;
+         FLOAT Velocity;  
+      }; break;
+
+       // Glass
+       case 20: {
+         CSTRING Name;           
+       }; break;
+
+       //  Tplate One-time touch plate. (when touched it activates something, can be done in mission editor if NOT for a door) 
+       // Automatic door touch plate. (activates whenever touched, is attached to a specific door(s))
+       case 25: {
+         CSTRING CollisionType2d <name="2d Collision Type">; 
+         CSTRING CollisionType3d <name="3d Collision Type">; 
+
+         struct {
+            FLOAT X1;        
+            FLOAT Y1;
+            FLOAT Z1;
+            FLOAT X2;        
+            FLOAT Y2;
+            FLOAT Z2;
+         } TPLATE_COORDINATES;
+
+         UINT AttachementCount;
+         CSTRING AttachementName[AttachementCount] <optimize=false>; 
+       }; break;
+
+      // halo
+       case 31: {
+         UINT Count;
+         typedef struct {
+           CSTRING Name;               
+           FLOAT X; 
+           FLOAT Y;        
+           FLOAT Z;  
+           FLOAT X; 
+           FLOAT Y;        
+           FLOAT Z;
+           FLOAT X; 
+           FLOAT Y;                  
+         } HALO;
+         typedef struct (int arraySize) {
+           HALO array[arraySize] <optimize=false>;
+         } HALOS;
+         HALOS Halo(Count);
+ 
+       }; break;
+      // Static world special effects
+     // "steama"	Medium hole in a steam pipe.
+		//"smokestacka"	Medium smoke stack.
+
+       case 36: {
+
+       }; break;
+    }; 
+} DYN_OBJECT <name=GetDynObjName>;
+
+string GetDynObjName(DYN_OBJECT &obj) {
+  return "Name: " + obj.Header.Name.Text;
+};
+
+
+struct {
+  SECTION_HEADER Header <name="Header">; 
+
+  UINT ObjectCount; 
+  if (ObjectCount > 0)
+    DYN_OBJECT Object[ObjectCount] <optimize=false>;
+
+} OBJECTLIST <name="7. ObjectList section">;
+
+//----------------------------------------------------------------
+//  RoomList section
+//---------------------------------------------------------------
+
+typedef struct {
+    SECTION_HEADER_SHORT Header; 
+    
+    BYTE Unknown1;
+    BYTE Unknown;    
+    BYTE Unknown2;      
+    if (Unknown1 == 0) 
+      BYTE Unknown3;
+
+    if (Unknown2 == 1) {
+      FLOAT Unknown6[6];
+    };
+
+    if (exists(Unknown3) && Unknown3 == 1) 
+      FLOAT Unknown00[6];  
+ 
+    UINT ShermanLevelCount; 
+    typedef struct {
+        CSTRING Name;
+
+        UINT Count;
+        typedef struct {
+          TRANSFORMATION_MATRIX TM;  
+          FLOAT AABB[6];
+        } somr;
+        somr ss[Count]; 
+
+        UINT Count;
+        FLOAT Unknown[Count]; // 1
+        BYTE Unknown; // hasShermanLevelPlanArea?
+    } SHERMAN_LEVEL;
+
+    struct {
+      SHERMAN_LEVEL ShermanLevels[ShermanLevelCount] <optimize=false>; 
+    } SHERMAN_LEVELS <name="Sherman levels">;
+
+    UINT LevelHeightsCount; // 1
+    FLOAT Unknown;
+    typedef struct { 
+      FLOAT LevelHeight;
+      FLOAT Unknown; 
+    } LevelHeight;
+    LevelHeight Unknown9[LevelHeightsCount];
+} ROOM <name=RoomName>;
+
+string RoomName(ROOM &room) {
+  return room.Header.Name.Text;
+
+}
+
+struct {
+   SECTION_HEADER header <name="RoomList section header">;
+
+  UINT Count;
+
+  struct {
+    ROOM Rooms[Count] <optimize=false>; 
+  } ROOMS <name="Rooms">;
+} ROOMLIST <name="8. RoomList section">;
+
+////----------------------------------------------------------------
+//// TransitionList section
+////---------------------------------------------------------------
+
+typedef struct {   
+  CSTRING TransitionName;
+
+  struct {
+    struct {
+      FLOAT X;
+      FLOAT Y;
+      FLOAT Z;
+    } P1;
+    struct {
+      FLOAT X;
+      FLOAT Y;
+      FLOAT Z;
+    } P2;
+  } COORDS;        
+} TRANSITION <name="Transition">;
+
+struct {
+  SECTION_HEADER header <name="Header">;
+
+  UINT Count;
+
+  typedef struct(int arraySize) {
+    TRANSITION array[arraySize] <optimize=false>;
+  } TRANSITIONS;
+
+  TRANSITIONS Transitions(Count) <name="Transitions">; 
+} TransitionLineList <name="9. TransitionList section">;
+
+////----------------------------------------------------------------
+//// PlanningLevelList section
+////---------------------------------------------------------------
+
+typedef struct { 
+    FLOAT LevelNumber;
+    FLOAT FloorHeight;
+
+    UINT RoomCount;    
+    CSTRING RoomName[RoomCount] <optimize=false>;
+} LEVEL <name="Level">;
+
+struct {
+  SECTION_HEADER header <name="Header">;
+
+  UINT LevelCount;
+  if (LevelCount > 0) {
+    LEVEL Level[LevelCount] <optimize=false>; 
+  };
+} PLANNINGLEVEL_LIST <name="10. PlanningLevelList section">;
+
+CSTRING Name <name="EndMAP">;

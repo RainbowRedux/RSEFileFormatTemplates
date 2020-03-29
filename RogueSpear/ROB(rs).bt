@@ -1,0 +1,218 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template
+//
+//      File: ROB.bt
+//   Authors: Alexander Evdokimov
+//   Version: 1.0
+//   Purpose: Rainbow Six Rogue Spear ROB file 
+// File Mask: *.rob
+//
+//   History: 
+//   2019 v1.0 
+//   2017 v0.5 initial release
+//------------------------------------------------
+
+string readCString()
+{
+  local uint Length;
+  local string Name;
+  Length = ReadInt(FTell());
+  FSkip(4);
+  Name = ReadString(FTell());
+  FSkip(-4);
+  return Name;
+};
+
+typedef struct {
+  FLOAT Red;
+  FLOAT Green;
+  FLOAT Blue; 
+  FLOAT Alpha; 
+} COLOR4F;
+
+typedef enum <ubyte> {
+  no = 0,
+  yes = 1
+} BOOL; // bool data type
+
+typedef struct { 
+  UINT Length;  
+  char Text[Length];
+} CSTRING; 
+
+typedef struct {
+  UINT SectionSize;
+  UINT ID;
+  CSTRING Name <name="Version">; 
+  if (Name.Text == "Version") {
+    UINT Value;
+    CSTRING Name <name="Name">;
+  }; 
+} SECTION_HEADER <name="Header">;
+
+typedef enum <uint> {
+  Opaque = 0, 
+  unknown = 1,
+  LookupCXP = 3
+} ALPHA_METHOD;
+
+typedef struct {     
+  UINT16 x;
+  UINT16 y;
+  UINT16 z;
+} VECTOR_SHORT; 
+
+typedef struct {     
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+} VECTOR3F; 
+
+typedef struct {     
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+  FLOAT w;  
+} VECTOR4; 
+
+typedef struct { 
+  FLOAT x;
+  FLOAT y;  
+} POINT2;
+
+// BeginModel token
+
+CSTRING BeginModel <name="BeginModel token">;
+
+//--------------------
+// MaterialList
+// --------------------
+
+typedef struct {
+  SECTION_HEADER Header;
+  CSTRING Name <name="Texture filename">; 
+  struct { 
+    FLOAT Opacity;
+    FLOAT Emissive; // 0    
+    ALPHA_METHOD alpha; // 0 - Opaque, 1 - unknown, 3 - Lookup CXP or opaque
+    COLOR4F Ambient; 
+    COLOR4F Diffuse;   
+    COLOR4F Specular;
+    FLOAT SpecularLevel; //o.o5
+    BOOL twoSided;
+  } MATERIAL_PROPERTIES;
+} MATERIAL <name=MaterialName>;
+
+string MaterialName(MATERIAL &material) {
+  return "Name: " + material.Header.Name.Text;
+} 
+
+struct {  
+  SECTION_HEADER Header;    
+  UINT Count <name="Number of materials">;
+  typedef struct (int arraySize) {
+    MATERIAL array[arraySize] <optimize=false>;
+  } MATERIALS; 
+  MATERIALS Materials(Count) <name="Materials">; 
+} MATERIAL_LIST <name="Material list">;
+
+//--------------------
+// GeometryList
+// --------------------
+
+typedef struct {   
+  struct {
+    UINT Index <name="Index of the material">;
+
+    UINT Count <name="Number of faces">;     
+    typedef struct (int arraySize) {
+      VECTOR4 array[arraySize];
+    } NORMALS1;  
+    NORMALS1 Normals(Count) <name="Normals??">; 
+        
+    typedef struct (int arraySize) {
+      VECTOR_SHORT array[arraySize];
+    } FACE_INDEXES;          
+    FACE_INDEXES FaceIndexes(Count) <name="Face Indexes">;  
+
+    typedef struct (int arraySize) {
+      VECTOR_SHORT array[arraySize];
+    } TEXTURE_INDEXES;          
+    TEXTURE_INDEXES TextureIndexes(Count) <name="Texture Indexes">;      
+
+    UINT VertexCount;        
+    typedef struct (int arraySize) {
+      VECTOR3F array[arraySize];
+    } NORMALS2;       
+    NORMALS2 Normals(VertexCount) <name="Normals">;        
+    typedef struct (int arraySize) {
+      POINT2 array[arraySize];
+    } UVs;        
+    UVs TextureCoordinates(VertexCount) <name="Texture coordinates">;           
+    typedef struct (int arraySize) {
+      COLOR4F array[arraySize] <optimize=false,name="RGBA Color">;
+    } VERTEX_COLOR4F; 
+    VERTEX_COLOR4F FaceCOLOR4F(VertexCount) <name="Vertex COLOR4Fs">; 
+  } GEOMETRY_DATA <name="Geometry data section">;
+} MESH <name="Mesh">;
+
+struct {   
+  SECTION_HEADER Header;  
+  UINT Count <name="Number of the objects">;
+  typedef struct {
+    SECTION_HEADER Header;
+    SECTION_HEADER Header;
+
+    UINT Count <name="Number of vertexes">;
+  
+    typedef struct (int arraySize) {
+      VECTOR3F array[arraySize];
+    } VERTEXES;     
+    VERTEXES Vertexes(Count) <name="Vertexes">; 
+
+    UINT Count <name="Number of meshes">; 
+    
+    typedef struct (int arraySize) {
+      MESH array[arraySize] <optimize=false>;
+    } MESHES;     
+    MESHES Meshes(Count) <name="Meshes">; 
+
+   struct {   
+     UINT Zero;
+     UINT Zero;
+     UINT Count;
+
+     typedef struct {
+       struct {
+         UINT16 I1;
+         UINT16 I2;
+         UINT16 I3;
+         UINT16 Index;
+       } Face;
+       UINT Unknown; // 0
+       UINT Unknown;
+     } INDEXES; 
+
+     typedef struct (int arraySize) {
+       INDEXES array[arraySize] <optimize=false>;
+     } INDEXES_ARRAY;
+     INDEXES_ARRAY CCArray(Count) <name="Indexes">; 
+
+     UINT count;
+
+     struct { 
+       CSTRING Name;
+       UINT Unknown; 
+       UINT Count;
+       UINT16 Index[Count] <name="Index">;
+      } UNKNOWN[count] <optimize=false>;
+
+   } UNKNOWN_DATA;
+ } OBJECT;
+ typedef struct (int arraySize) {
+   OBJECT array[arraySize] <optimize=false>;
+ } OBJECTS;     
+ OBJECTS Objects(Count) <name="Objects">; 
+} ROBGEOMETRYLIST  <name="GeometryList">;
+
+CSTRING EndModel <name="EndModel token">;

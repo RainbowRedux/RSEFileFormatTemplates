@@ -1,0 +1,125 @@
+//------------------------------------------------
+//--- 010 Editor v8.0.1 Binary Template
+//
+//      File: 
+//   Authors: 
+//   Version: 
+//   Purpose: 
+//  Category: 
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+typedef struct {
+  struct { 
+    FLOAT x;        
+    FLOAT y;
+    FLOAT z;
+  } XAXIS;
+  struct { 
+    FLOAT x;
+    FLOAT y;
+    FLOAT z;
+  } YAXIS;
+  struct {
+    FLOAT x;
+    FLOAT y;
+    FLOAT z;
+  } ZAXIS;
+  struct {
+    FLOAT Y;
+    FLOAT X;
+    FLOAT Z;
+  } POSITION;
+} TRANSFORMATION_MATRIX; 
+
+struct {
+  FLOAT Version; // 1.5
+  UINT BoneCount;
+} FILE_HEADER;
+
+typedef struct {
+  // relative
+  struct {
+    FLOAT X;   
+    FLOAT Y;
+    FLOAT Z;
+  } POSITION_REL; 
+  // 
+  struct {
+    FLOAT X;   
+    FLOAT Y;
+    FLOAT Z;
+    FLOAT W;
+  } ROTATION_REL;
+  //
+  TRANSFORMATION_MATRIX Matrix;
+  // absolute
+  struct {
+    FLOAT X;   
+    FLOAT Y;
+    FLOAT Z;
+  } POSITION_ABS;
+  // 
+  struct {
+    FLOAT X;   
+    FLOAT Y;
+    FLOAT Z;
+    FLOAT W;
+  } ROTATION_ABS;
+
+  FLOAT X;   
+  FLOAT Y;
+  FLOAT Z;
+  FLOAT W;
+  //
+  UINT Length;
+  CHAR Name[Length];
+  UINT BoneIndex;
+
+  BYTE A;
+  if (A == 1)
+  {
+    struct {
+      //
+      FLOAT X;   
+      FLOAT Y;
+      FLOAT Z;
+      //
+      FLOAT Unknown;
+       //
+      FLOAT X;   
+      FLOAT Y;
+      FLOAT Z;
+      //
+      FLOAT X;   
+      FLOAT Y;
+      FLOAT Z;
+      //
+      FLOAT Unknown;
+    } UNKNOWN;
+  }
+} BONE <optimize=false, name=getBoneName>;
+
+
+string getBoneName(BONE &Bone)
+{
+  return Bone.Name;
+}
+
+void ReadBone()
+{  
+  BYTE Cycle;
+  if (Cycle == 1)
+    ReadBone();
+  BYTE Cycle;
+  if (Cycle == 1)
+    ReadBone(); 
+  BONE Bone;
+
+};
+
+ReadBone();
+
+

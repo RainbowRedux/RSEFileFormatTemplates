@@ -1,0 +1,32 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template
+//
+//      File: CHR.bt
+//   Authors: AlexKimov
+//   Version: 1.0
+//   Purpose: Rainbow Six BCL file
+//
+//   History:
+//
+//------------------------------------------------
+
+local uint count = 21; // 
+
+typedef struct {
+  UINT Count;
+
+  typedef struct {
+    BYTE A1;
+    BYTE B1;
+    BYTE C1;
+    BYTE D1;
+  } S;
+
+  typedef struct (int size) {
+    S array[size];
+  } S1;
+
+  S1 SA(Count) <optimize=false>;
+} D;
+
+D SD[count] <optimize=false>;

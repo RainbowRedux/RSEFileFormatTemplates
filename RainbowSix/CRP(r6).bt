@@ -1,0 +1,137 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template
+//
+//      File: CRP.bt
+//   Authors: Alexander Evdokimov
+//   Version: 0.1
+//   Purpose: Rainbow six CRP files
+// File Mask: *.crp
+//
+//   History: 
+//
+//   2017.06 v0.1 initial release
+//------------------------------------------------
+
+local uint count;
+
+typedef struct { 
+  UINT Length;  
+  char Text[Length];
+} CSTRING; 
+
+typedef struct {
+  UBYTE R;
+  UBYTE G;
+  UBYTE B;
+  UBYTE A;     
+} VECTOR_4B;
+
+typedef struct {
+  UINT Red;
+  UINT Green;
+  UINT Blue;
+  UINT Alpha;
+} VECTOR_4UI;
+
+typedef struct {
+  UINT X;
+  UINT Y;
+  UINT Z;
+} VECTOR_3UI;
+
+typedef struct {
+  FLOAT X;
+  FLOAT Y;
+  FLOAT Z;
+} VECTOR_3F;
+
+typedef struct {
+  FLOAT X;
+  FLOAT Y;
+} VECTOR_2F;
+
+struct {
+  typedef struct {
+    UINT VertexCount <name="Vertex count">;
+    struct {
+      UINT Index[VertexCount] <name="Index">;
+    } INDEXES <name="Vertex indexes">;
+    // ???
+    struct {
+      VECTOR_3F Coordinates[VertexCount] <name="Vertex">;
+    } COORDINATES_ARRAY <name="Vertex cordinates array">;
+  } BODYP <name="Body part">;
+  BODYP BodyParts[18] <optimize=false>;
+} BODY <name="Weight indexes">;
+
+//-------------------------------------------------
+
+typedef struct {
+  CSTRING Name;   
+  struct {
+    VECTOR_4B Ambient;
+    VECTOR_4B Diffuse;
+    UINT Unknown; // Transparency type ?
+    UINT Transparency; 
+    BYTE twoSided; // 1 - yes
+  } PROPERTIES;  
+} MATERIAL <name=textureName>;
+
+string textureName(MATERIAL &mat) {
+  return mat.Name.Text;
+};
+
+struct {
+  FLOAT Version;
+  CSTRING Name;
+} HEADER <name="File header kind of">;
+
+struct {
+  struct {
+    UINT Unknown;
+    UINT Unknown;
+    UINT Unknown;
+    UINT Unknown;
+    UINT Unknown;
+    UINT Unknown;
+  } PROPERTIES <name="???">; 
+  //
+  UINT TextureCount <name="Number of textures">;
+  MATERIAL Textures[TextureCount] <optimize=false>;
+} MATERIALS <name="Materials">;
+
+//-------------------------------------------------
+
+struct {
+  UINT Count <name="Number of faces">;
+  typedef struct {
+    VECTOR_3UI FaceIndexes <name="Vertex indexes">;  
+    VECTOR_3UI UVIndexes <name="Texture coordinates indexes">;  
+    UINT MaterialIndex;
+    INT Unknown; // color, index ?
+  } FACE <name="Face">;
+  FACE Indexes[Count] <optimize=false>;
+} INDEXES <name="Face data">;
+
+//-------------------------------------------------
+
+struct {
+  UINT Count <name="count">;
+  VECTOR_3F Vertexes[Count] <optimize=false, name="Vertex coordinates">;
+} VERTEXES_ <name="Vertexes">;
+
+//-------------------------------------------------
+
+struct {
+  UINT VertexAttributesCount <name="Number of vertex attributes">;
+  typedef struct {
+    VECTOR_2F TexCoordinates <name="UV">;   
+    VECTOR_3F Normal <name="Normal">;
+    VECTOR_4UI FaceColor;
+  } VERTEX_ATTRIBUTES <name="Face">;
+  VERTEX_ATTRIBUTES VertexAttributes[VertexAttributesCount] <optimize=false>;
+} POLYGONS <name="Vertex attributes">;
+
+//-------------------------------------------------
+
+  UINT Count <name="unknown">;

@@ -1,0 +1,209 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template
+//
+//      File: QOB(rsp).bt
+//   Authors: Alexander Evdokimov
+//   Version: 0.2
+//   Purpose: Rogue Spear QOB file
+// File Mask: *.qob
+//
+//   History: 
+//    
+//   2016.10 v0.2 initial release
+//------------------------------------------------
+
+typedef enum <ubyte> {
+    no,
+    yes
+} BOOL; // bool data type
+
+typedef struct { 
+  UINT Length;  
+  char Text[Length];
+} CSTRING; 
+
+typedef struct {
+  UINT SectionSize;
+  UINT ID;
+  
+  CSTRING Name;
+  if (Name.Text == "Version") {
+      UINT Value;
+      CSTRING Name <name="Name">;
+  };
+} HEADER <name="Header">;
+
+typedef struct {            
+  FLOAT Red; 
+  FLOAT Green; 
+  FLOAT Blue; 
+  FLOAT Alpha;
+} COLOR4F; 
+
+typedef struct {            
+  FLOAT x; 
+  FLOAT y; 
+  FLOAT z; 
+} VECTOR3F; 
+
+typedef struct {            
+  FLOAT x; 
+  FLOAT y;  
+} VECTOR2F; 
+
+typedef struct {            
+  UINT16 x; 
+  UINT16 y;
+  UINT16 z;   
+} VECTOR3U16;
+
+//--------------------
+// File header
+// --------------------
+
+struct {   
+  CSTRING Name; 
+} QOB_FILE_HEADER <name="QOB Header", fgcolor=cBlack, bgcolor=0xccff66>;
+
+//--------------------
+// MATERIALLIST
+// --------------------
+
+typedef struct {
+  HEADER header;
+   
+  CSTRING Name <name="Texture filename">; 
+
+  struct { 
+    FLOAT Opacity;
+    FLOAT Unknown;
+    UINT Unknown; 
+    COLOR4F Ambient; 
+    COLOR4F Diffuse;   
+    COLOR4F Specular;
+    FLOAT SpecularLevel; //o.o5
+    BYTE twoSided;
+  } MATERIAL_PROPERTIES;
+} MATERIAL <name=MaterialName>;
+
+string MaterialName(MATERIAL &material) {
+  return "Name: " + material.header.Name.Text + " ";
+} 
+
+struct {  
+
+  HEADER Header <name="Section header">;
+    
+  struct {
+    UINT Count <name="Number of materials">;
+
+    typedef struct (int arraySize) {
+      MATERIAL array[arraySize] <optimize=false>;
+    } MATERIAL_ARRAY; 
+
+    MATERIAL_ARRAY MaterialArray(Count) <name="Materials">; 
+  } Materials <name="1.1 Materials section">;
+
+} MATERIALLIST <name="MaterialList section">;
+
+//--------------------
+// QOBGEOMETRYLIST
+// --------------------
+
+
+typedef struct {
+   UINT MaterialIndex;
+
+   struct {
+      UINT FaceCount; 
+
+      typedef struct {     
+        FLOAT X;
+        FLOAT Y;
+        FLOAT Z;
+        FLOAT Distance;
+       } FACE_NORMALS;
+
+      typedef struct (int arraySize) {
+        FACE_NORMALS array[arraySize];
+      } FACE_NORMALS_ARRAY;
+      
+      FACE_NORMALS_ARRAY FacesNormalsArray(FaceCount) <name="Normals">;
+
+      typedef struct (int arraySize) {
+        VECTOR3U16 array[arraySize] <name="Vertex indexes">;
+      } FACE_INDEXES;
+      
+      FACE_INDEXES FaceIndexes(FaceCount) <name="Face Indexes">;
+
+      typedef struct (int arraySize) {
+        VECTOR3U16 array[arraySize];
+      } UV_INDEXES;
+      
+      UV_INDEXES TextureCoordanatesIndexes(FaceCount) <name="Texture Indices">;
+
+  } Faces <name="Faces">;
+
+  struct {  
+    UINT VertexCount;
+     
+    typedef struct (int arraySize) {
+      VECTOR3F array[arraySize] <name="Normal">;
+    } NORMALS;
+    
+    NORMALS Normals(VertexCount) <name="Vertex Normals">;
+    
+    typedef struct (int arraySize) {
+       VECTOR2F array[arraySize] <name="UV">;
+    } UV_COORDINATES;
+    
+    UV_COORDINATES TextureCoordinates(VertexCount) <name="Texture coordinates">; 
+      
+    typedef struct (int arraySize) {
+       COLOR4F array[arraySize] <optimize=false, name="RGB color">;
+    } FACE_COLOR; 
+    FACE_COLOR FaceColor(VertexCount) <name="Faces colors">; 
+
+  } TEXTUREVERTICIES <name="Texture data">;   
+} MESH <name="Mesh">; 
+
+
+struct {   
+  HEADER Header <name="GeometryList Header">;  
+
+  UINT Count <name="Object Count">;
+
+  typedef struct { 
+    //  section header 
+    HEADER Header <name="Section header">; 
+
+    UINT VertexCount;  
+ 
+    typedef struct (int arraySize) {
+      VECTOR3F array[arraySize] <name="Vertex">;
+    } VERTEXES;     
+    VERTEXES VertexArray(VertexCount) <name="Vertexes">; 
+
+    UINT MeshCount;  //
+
+    typedef struct (int arraySize) {
+      MESH array[arraySize] <optimize=false>;
+    } MESHES; 
+    
+    MESHES Meshes(MeshCount) <name="Mesh array">; 
+
+ } OBJECT <name="Object">;  
+
+  typedef struct (int arraySize) {
+    OBJECT array[arraySize] <optimize=false>;
+  } OBJECTS; 
+
+  OBJECTS GeometryDataArray(Count) <name="Objects">; 
+
+  
+} QOBGEOMETRYLIST  <name="GeometryList Section">;
+
+struct {
+  UINT Length;
+  char String[Length]; 
+} ENDMODEL_STRING <name="QOB File End">;

@@ -134,7 +134,10 @@ typedef struct  {
 
    struct {
      UINT VertexCount;
-     UINT VertexIndices[VertexCount];
+    if (VertexCount > 0)
+     {
+UINT VertexIndices[VertexCount];
+}
 
      UINT FaceCount; 
      UINT FaceIndices[FaceCount];
@@ -765,7 +768,36 @@ struct {
 
   LEVELS Levels(LevelCount) <name="Levels">;
  
-  BYTE Unknown;
+  
 } PLANNING_LEVEL_LIST <name="Planning Level List">;
+
+struct {
+    BYTE Unknown;
+    
+    if (Unknown > 0)
+    {
+        CSTRING Room <optimize=false, name="Room">;
+        CSTRING ShermanLevel <optimize=false, name="ShermanLevel">;
+
+        UINT padding1[2];
+
+        CSTRING VersionString <optimize=false, name="VersionString">;
+        UINT version;
+
+        struct {   
+      CSTRING Name;
+
+      FLOAT padding2[2];
+
+      UINT unknowncount;
+
+
+      VERTEX_ARRAY Vertices(unknowncount);
+
+      UINT unknowncount2;
+       
+  } SHERMAN_LEVEL <optimize=false>;
+    }
+} INSERTION_AREA_LIST <name="Insertion Area List">;
 
 CSTRING EndMap <name="EndMap">;

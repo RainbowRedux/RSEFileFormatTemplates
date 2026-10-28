@@ -3,30 +3,41 @@
 //
 //      File: CHR.bt
 //   Authors: AlexKimov
-//   Version: 1.0
-//   Purpose: Rainbow Six BCL file
+//   Version: 1.1
+//   Purpose: Rainbow Six BCL file (baked character lighting, <name>_c.bcl)
 //
 //   History:
+//   2026.10 v1.1 groups per light level and LOD, RGBA colours
 //
 //------------------------------------------------
+//
+// Characters are pre-lit: texture x the colour of the current light level. 7 levels x 3 LODs, level-major:
+// group 3*level + lod, lod 0/1/2 = <name>_a/_b/_c.CRP, one RGBA per vertex attribute of that CRP.
+// The level: at load each world cell's brightest lit point maps to the nearest of
+// {19, 67, 114, 161, 208, 255} = level 0..5; per frame the level is interpolated between cells, rounded,
+// clamped to <= 6. Level 6 is forced while the firing flash shows; its colours are dimmer, with the third
+// byte highest (blue-tinted). Rogue Spear has no .bcl.
 
-local uint count = 21; // 
+local uint count = 21; // 7 levels x 3 LODs
 
 typedef struct {
-  UINT Count;
+  UBYTE R;
+  UBYTE G;
+  UBYTE B;  // the largest of the three at level 6
+  UBYTE A;  // 255, 127 or 101, the values of the CRP materials' Transparency
+} RGBA;
 
-  typedef struct {
-    BYTE A1;
-    BYTE B1;
-    BYTE C1;
-    BYTE D1;
-  } S;
+typedef struct (int k) {
+  local int Level = k / 3;
+  local int Lod = k % 3;
+  UINT Count; // vertex attributes of the LOD's CRP
+  RGBA Colour[Count];
+} D <read=groupName>;
 
-  typedef struct (int size) {
-    S array[size];
-  } S1;
+string groupName(D &d) {
+  return Str("level %d, LOD %c, %d colours", d.Level, 'a' + d.Lod, d.Count);
+}
 
-  S1 SA(Count) <optimize=false>;
-} D;
-
-D SD[count] <optimize=false>;
+local int k;
+for (k = 0; k < count; k++)
+  D SD(k);

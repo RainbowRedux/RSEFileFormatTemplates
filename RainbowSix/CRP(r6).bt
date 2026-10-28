@@ -3,27 +3,30 @@
 //
 //      File: CRP.bt
 //   Authors: Alexander Evdokimov
-//   Version: 0.1
-//   Purpose: Rainbow six CRP files
+//   Version: 0.2
+//   Purpose: Rainbow six CRP files (character mesh, one LOD: <name>_a/_b/_c.CRP, a = most detailed)
 // File Mask: *.crp
 //
-//   History: 
+//   History:
 //
 //   2017.06 v0.1 initial release
+//   2026.10 v0.2 body parts per bone, bind positions, vertex attributes, material fields
 //------------------------------------------------
+//
+// Rigid skinning: every vertex is a bind position (model space, "Bind positions") and, in the part that
+// lists it, its position in one bone's space. Faces index bind positions and vertex attributes (UV, normal,
+// colour) separately. Triangles are clockwise = front (D3D default).
 
-local uint count;
-
-typedef struct { 
-  UINT Length;  
-  char Text[Length];
-} CSTRING; 
+typedef struct {
+  UINT Length;
+  char Text[Length]; // NUL included
+} CSTRING;
 
 typedef struct {
   UBYTE R;
   UBYTE G;
   UBYTE B;
-  UBYTE A;     
+  UBYTE A;
 } VECTOR_4B;
 
 typedef struct {
@@ -50,31 +53,59 @@ typedef struct {
   FLOAT Y;
 } VECTOR_2F;
 
+// Skeleton bone order (BoneIndex in the .SKL, the order of a .DAM frame's quaternions).
+string BoneName(int i) {
+  switch (i) {
+    case 0: return "Hips";        case 1: return "Chest";        case 2: return "Neck";
+    case 3: return "Head";        case 4: return "LeftCollar";   case 5: return "LeftUpArm";
+    case 6: return "LeftLowArm";  case 7: return "LeftHand";     case 8: return "RightCollar";
+    case 9: return "RightUpArm";  case 10: return "RightLowArm"; case 11: return "RightHand";
+    case 12: return "LeftUpLeg";  case 13: return "LeftLowLeg";  case 14: return "LeftFoot";
+    case 15: return "RightUpLeg"; case 16: return "RightLowLeg"; case 17: return "RightFoot";
+  }
+  return "?";
+}
+
+// Part k is skinned to bone PartToBone(k), the same for every character.
+int PartToBone(int k) {
+  switch (k) {
+    case 0: return 0;   case 1: return 1;   case 2: return 12;  case 3: return 15;  case 4: return 16;
+    case 5: return 17;  case 6: return 13;  case 7: return 14;  case 8: return 2;   case 9: return 4;
+    case 10: return 8;  case 11: return 9;  case 12: return 10; case 13: return 11; case 14: return 5;
+    case 15: return 6;  case 16: return 7;  case 17: return 3;
+  }
+  return -1;
+}
+
+typedef struct (int k) {
+  local int Part = k;
+  local int Bone = PartToBone(k);
+  UINT VertexCount <name="Vertex count">; // some variants have empty parts
+  UINT Index[VertexCount] <name="Bind position index">; // ascending, each vertex once
+  VECTOR_3F Local[VertexCount] <name="Position in the bone's space">;
+} BODYP <read=bodyPartName>;
+
+string bodyPartName(BODYP &p) {
+  return Str("part %d -> bone %d %s, %d vertices", p.Part, p.Bone, BoneName(p.Bone), p.VertexCount);
+}
+
 struct {
-  typedef struct {
-    UINT VertexCount <name="Vertex count">;
-    struct {
-      UINT Index[VertexCount] <name="Index">;
-    } INDEXES <name="Vertex indexes">;
-    // ???
-    struct {
-      VECTOR_3F Coordinates[VertexCount] <name="Vertex">;
-    } COORDINATES_ARRAY <name="Vertex cordinates array">;
-  } BODYP <name="Body part">;
-  BODYP BodyParts[18] <optimize=false>;
-} BODY <name="Weight indexes">;
+  local int k;
+  for (k = 0; k < 18; k++)
+    BODYP BodyParts(k);
+} BODY <name="Parts (vertices per bone)">;
 
 //-------------------------------------------------
 
 typedef struct {
-  CSTRING Name;   
+  CSTRING Name; // source texture: x.bmp -> x.RSB, x.tga -> TGAx.RSB in the character's folder
   struct {
     VECTOR_4B Ambient;
     VECTOR_4B Diffuse;
-    UINT Unknown; // Transparency type ?
-    UINT Transparency; 
-    BYTE twoSided; // 1 - yes
-  } PROPERTIES;  
+    UINT Unknown;      // always 0
+    UINT Transparency; // 255 = opaque (also 127, 101, 38); the attributes' colour alpha
+    BYTE twoSided;     // 1 - yes
+  } PROPERTIES;
 } MATERIAL <name=textureName>;
 
 string textureName(MATERIAL &mat) {
@@ -82,20 +113,12 @@ string textureName(MATERIAL &mat) {
 };
 
 struct {
-  FLOAT Version;
+  FLOAT Version; // 2.1
   CSTRING Name;
-} HEADER <name="File header kind of">;
+} HEADER <name="File header">;
 
 struct {
-  struct {
-    UINT Unknown;
-    UINT Unknown;
-    UINT Unknown;
-    UINT Unknown;
-    UINT Unknown;
-    UINT Unknown;
-  } PROPERTIES <name="???">; 
-  //
+  FLOAT Unknown[6] <name="???">; // +FLT_MAX x3, -FLT_MAX x3 (an empty min/max box)
   UINT TextureCount <name="Number of textures">;
   MATERIAL Textures[TextureCount] <optimize=false>;
 } MATERIALS <name="Materials">;
@@ -105,33 +128,35 @@ struct {
 struct {
   UINT Count <name="Number of faces">;
   typedef struct {
-    VECTOR_3UI FaceIndexes <name="Vertex indexes">;  
-    VECTOR_3UI UVIndexes <name="Texture coordinates indexes">;  
+    VECTOR_3UI FaceIndexes <name="Bind position indexes">;
+    VECTOR_3UI UVIndexes <name="Vertex attribute indexes">;
     UINT MaterialIndex;
-    INT Unknown; // color, index ?
+    UINT Unknown; // always 0xFFFFFFFF
   } FACE <name="Face">;
   FACE Indexes[Count] <optimize=false>;
 } INDEXES <name="Face data">;
 
 //-------------------------------------------------
 
+// Model space: each part's vertices in the skeleton's rest pose (identity rotations, zero root).
 struct {
   UINT Count <name="count">;
-  VECTOR_3F Vertexes[Count] <optimize=false, name="Vertex coordinates">;
-} VERTEXES_ <name="Vertexes">;
+  VECTOR_3F Vertexes[Count] <optimize=false, name="Bind position">;
+} VERTEXES_ <name="Bind positions">;
 
 //-------------------------------------------------
 
 struct {
   UINT VertexAttributesCount <name="Number of vertex attributes">;
   typedef struct {
-    VECTOR_2F TexCoordinates <name="UV">;   
+    VECTOR_2F TexCoordinates <name="UV">; // V in -1..0, U past 0..1 at seams: WRAP addressing
     VECTOR_3F Normal <name="Normal">;
-    VECTOR_4UI FaceColor;
-  } VERTEX_ATTRIBUTES <name="Face">;
+    VECTOR_4UI FaceColor; // mostly 128 grey, alpha = the material's Transparency. The game
+                          // lights characters with the .bcl (one RGBA per attribute) instead
+  } VERTEX_ATTRIBUTES <name="Vertex attribute">;
   VERTEX_ATTRIBUTES VertexAttributes[VertexAttributesCount] <optimize=false>;
 } POLYGONS <name="Vertex attributes">;
 
 //-------------------------------------------------
 
-  UINT Count <name="unknown">;
+UINT Tail <name="unknown">; // always 0

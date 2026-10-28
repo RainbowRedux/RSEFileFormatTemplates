@@ -1,0 +1,321 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template
+//
+//      File: CHR(gr).bt
+//   Authors: AlexKimov
+//   Version: 1.2
+//   Purpose: Ghost Recon CHR file (Mods_Character/**/*.chr: one LOD of a skinned body)
+// File Mask: *.chr
+//
+//   History:
+//
+//   2026.10 v1.2 skin count, helper points, bone record version, detail texture index with 2 texture layers
+//   2019.01 v1.1
+//   2018.04 v1.0
+//   2017.01 v0.9
+//   2016.12 v0.4 initial release
+//------------------------------------------------
+//
+// A GR model (as .qob: one header per geometry, no collision) of one geometry "Scene Root", then a 21-bone
+// skeleton and skin weights. Units are cm (static models and maps are in metres), Z up, facing +X.
+// Skinning is linear blend: sum of weight * W_pose * inverse(W_bind) * v, W_bone = W_parent * T(pos) * R(q).
+
+typedef enum <ubyte> {
+  no = 0,
+  yes = 1
+} BOOL; // bool data type
+
+typedef struct {
+  UINT Length;
+  char Text[Length]; // may carry stale bytes after the NUL
+} CSTRING;
+
+typedef struct {
+  UINT SectionSize;
+  UINT ID;
+  struct {
+    CSTRING Name <name="Version">;
+    UINT Value;
+  } VERSION;
+  CSTRING Name <name="Name">;
+} SECTION_HEADER <name="Header">;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+} POINT2;
+
+typedef struct {
+  UINT16 x;
+  UINT16 y;
+  UINT16 z;
+} VECTOR_SHORT;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+} VECTOR3;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+  FLOAT w;
+} VECTOR4;
+
+typedef struct {
+  VECTOR3 X; // rows: v' = v * M + Position
+  VECTOR3 Y;
+  VECTOR3 Z;
+  VECTOR3 Position;
+} TRANSFORMATION_MATRIX;
+
+//--------------------
+// File header
+// --------------------
+
+FLOAT Version <name="Version">; // 1.0
+CSTRING Name <name="BeginModel">;
+
+//--------------------
+// MATERIALLIST
+// --------------------
+
+typedef struct {
+  FLOAT Red;
+  FLOAT Green;
+  FLOAT Blue;
+  FLOAT Alpha;
+} COLOR;
+
+typedef struct {
+  SECTION_HEADER Header; // ID 2, version 2; SectionSize counts from after this header (maps: from the size field)
+  struct {
+    FLOAT Opacity;
+    UINT Unknown; // 3 in .chr and .pob (0 in maps)
+    COLOR Ambient;
+    COLOR Diffuse;
+    COLOR Specular;
+    FLOAT SpecularLevel; //o.o5
+    BOOL twoSide;
+  } PARAMETERS;
+} MATERIAL <name=MaterialName>;
+
+typedef struct {
+  SECTION_HEADER Header; // ID 38, version 2, name "NONE"; SectionSize counts from after this header
+  if (Header.VERSION.Value > 1) // absent in version 1 textures
+    BOOL Unknown; // 0
+  CSTRING Name <name="Texture .rsb file name">;
+  struct {
+    UINT TransparencyType;  // 3 in .chr
+    UINT IsTiled; // 0 or 2 in .chr (1 - u-tile, 2 - v-tile, 3 - both none)
+    FLOAT SelfIllumination; // 0
+  } PARAMETERS;
+} TEXTURE <name=TextureName>;
+
+string MaterialName(MATERIAL &material) {
+  return "Name: " + material.Header.Name.Text;
+}
+
+string TextureName(TEXTURE &texture) {
+  return "FileName: " + texture.Name.Text;
+}
+
+struct {
+  SECTION_HEADER Header; // "MaterialList", ID 8, version 3
+  UINT Count <name="Number of materials">;
+  typedef struct (int arraySize) {
+    MATERIAL array[arraySize] <optimize=false>;
+  } MATERIALS;
+  MATERIALS Materials(Count) <name="Materials">;
+  UINT Count <name="Number of textures">;
+  if (Count > 0)
+  {
+    typedef struct (int arraySize) {
+      TEXTURE array[arraySize] <optimize=false>;
+    } TEXTURES;
+    TEXTURES TextureArray(Count) <name="Textures">;
+  };
+} MATERIAL_LIST <name="Material List">;
+
+//--------------------
+// GEOMETRYLIST
+// --------------------
+
+typedef struct {
+  CSTRING Name;
+  TRANSFORMATION_MATRIX Matrix;
+} POINT <name=PointName>;
+
+string PointName (POINT &point) {
+  return "Name: " + point.Name.Text;
+};
+
+struct {
+  SECTION_HEADER Header; // "GeometryList", ID 7, version 1
+  UINT Count <name="Number of geometries">; // 1
+  typedef struct {
+    // ID 3, version 8 (the version 7/8 layout; see QOB(gr).bt for older versions).
+    // SectionSize counts from after this header to the end of the helper points.
+    SECTION_HEADER Header;
+    BOOL DarkMapped <name="DarkMapped">;
+    BOOL CastShadows <name="CastShadows">;
+    struct {
+      UINT Count <name="Number of vertexes">;
+      typedef struct (int arraySize) {
+        VECTOR3 array[arraySize];
+      } VERTEXES;
+      VERTEXES Vertexes(Count) <name="Vertexes">;
+    } VERTEXES_SECTION <name="Vertex section">;
+
+    UINT Count <name="Number of face groups">;
+    typedef struct {
+      struct {
+        BYTE Unknown; // 1
+        BYTE DetailedDarkmap;
+        BYTE DetailTexture;
+        UINT MaterialIndex;
+        UINT isTextured; // texture layers: 0, 1 or 2
+        if (isTextured > 0)
+        {
+          UINT TextureIndex;
+          if (DetailTexture > 0 || isTextured > 1)
+            UINT DetailTextureIndex;
+        };
+        struct {
+          UINT Unknown;
+          UINT DarkmapIndex; // a texture index (darkmap<n><map>.rsb in maps); 0xFFFFFFFF unset
+          UINT SpecularMap;
+          UINT BumpMap;
+          UINT ReflectionMap;
+          UINT MapCount;
+        } MAPPING; // 0xFFFFFFFF = unset (all six in .chr)
+      } TEXTURE_PARAMETERS;
+
+      struct {
+        UINT Count <name="Number of faces">;
+        typedef struct (int arraySize) {
+          VECTOR4 array[arraySize];
+        } NORMALS1;
+        NORMALS1 Normals(Count) <name="Face planes">; // normal xyz = (b-a)x(c-a) normalised, distance
+        typedef struct (int arraySize) {
+          VECTOR_SHORT array[arraySize];
+        } FACE_INDEXES;
+        FACE_INDEXES FaceIndexes(Count) <name="Face Indexes">; // into the geometry's vertices
+        typedef struct (int arraySize) {
+          VECTOR_SHORT array[arraySize];
+        } TEXTURE_INDEXES;
+        TEXTURE_INDEXES TextureIndexes(Count) <name="Vertex param indexes">; // into this group's params
+
+        UINT VertexCount; // vertex params (normal, uv per set, colour)
+        UINT TextureCount; // uv sets, stored set after set
+        typedef struct (int arraySize) {
+          VECTOR3 array[arraySize];
+        } NORMALS2;
+        NORMALS2 Normals(VertexCount) <name="Normals">;
+        typedef struct (int arraySize) {
+          POINT2 array[arraySize];
+        } UVs;
+        UVs TextureCoordinates(VertexCount*TextureCount) <name="Texture coordinates">;
+        typedef struct (int arraySize) {
+          COLOR array[arraySize] <optimize=false>;
+        } FACE_COLOR;
+        FACE_COLOR FaceColor(VertexCount) <name="Vertex colours">; // RGBA 0-1 per param
+      } FACE_PARAMETERS;
+    } MESH <name="Face group">;
+    typedef struct (int arraySize) {
+      MESH array[arraySize] <optimize=false>;
+    } MESHES;
+    MESHES Meshes(Count) <name="Face groups">;
+
+    // The geometry's helper points (none in .chr).
+    struct {
+      UINT Count;
+      if (Count > 0)
+        POINT Points[Count] <optimize=false>;
+    } HELPER_POINTS <name="Helper points">;
+  } OBJECT;
+  typedef struct (int arraySize) {
+    OBJECT array[arraySize] <optimize=false>;
+  } OBJECTS;
+  OBJECTS Objects(Count) <name="Geometries">;
+} GEOMETRY_LIST  <name="Geometry List">;
+
+CSTRING Name <name="EndModel">;
+
+//--------------------
+// Skeleton, Weights
+// --------------------
+
+// Depth first, no size field. The 21 bones, always the same: SpineRoot01 -> SpineLow -> SpineMid ->
+// SpineTop -> {Neck2 -> Neck -> Head, RBicep -> RForearm -> RHand, LBicep -> LForearm -> LHand};
+// SpineRoot01 -> {RThigh -> RCalf -> RFoot -> RToe, LThigh -> ...}.
+typedef struct {
+  struct {
+    UINT ID; // 37
+    struct {
+      CSTRING Name <name="Version">;
+      UINT value; // 5
+    } VERSION_STRING;
+    CSTRING Name <name="Bone name">;
+  } BONE_HEADER;
+  VECTOR3 Position; // bind position relative to the parent
+  VECTOR4 Rotation; // bind rotation relative to the parent: quaternion x, y, z, w (not conjugated)
+  FLOAT Unknown; // 0
+  UINT Count; // children
+  if (Count > 0)
+    struct {
+      Bone(Count);
+    } CHILDREN;
+} SKELETON_BONE <name=getBoneName>;
+
+void Bone(uint count)
+{
+  local uint i;
+  for (i = 0; i < count; ++i)
+    SKELETON_BONE bone;
+};
+
+// BoneName function
+string getBoneName(SKELETON_BONE &bone) {
+  return "Name: " + bone.BONE_HEADER.Name.Text;
+}
+
+typedef struct {
+  CSTRING Name; // bone name
+  FLOAT VertexWeight; // a vertex's weights sum to 1
+} BONE_WEIGHT;
+
+typedef struct {
+  UINT VertexIndex; // from 0 within the skin
+  UINT BoneCount; // 1-7 (0: unweighted)
+  if (BoneCount > 0)
+    BONE_WEIGHT Bones[BoneCount] <optimize=false>;
+} VERTEX_WEIGHT <name = "Vertex Weight">;
+
+typedef struct {
+  CSTRING Name; // the skin's name
+  UINT VertexCount;
+  typedef struct (int arraySize) {
+    VERTEX_WEIGHT array[arraySize] <optimize=false>;
+  } VERTEX_WEIGHT_ARRAY;
+  VERTEX_WEIGHT_ARRAY VertexWeightArray(VertexCount) <name="Weights">;
+} SKIN <name=SkinName>;
+
+string SkinName(SKIN &skin) {
+  return "Name: " + skin.Name.Text;
+}
+
+struct {
+  struct {
+    Bone(1);
+  } SKELETON <name="Skeleton">;
+  struct {
+    CSTRING Name <name="Skin">;
+    // The number of skins, usually 1. Skins cover the geometry's vertices in order: the skins' vertex
+    // counts add up to its vertex count.
+    UINT SkinCount;
+    SKIN Skins[SkinCount] <optimize=false>;
+  } WEIGHT_TABLE <name="Weight Table">;
+} SKELETON <name="Skeleton + Weights">;

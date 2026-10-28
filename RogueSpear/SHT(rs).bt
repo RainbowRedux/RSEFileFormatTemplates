@@ -1,0 +1,503 @@
+//------------------------------------------------
+//--- 010 Editor v9.0 Binary Template ------------
+//
+//      File: SHT(rs).bt
+//   Authors: Piotr Sienkiewicz
+//   Version: 1.0
+//   Purpose: Rogue Spear SHT file: the scene cache generated from a .map
+//            (rooms' floor triangles and walls, per floor level "areas"
+//            with their nav points, cover points and paths, the portal
+//            grid cells and the links between areas)
+// File Mask: *.sht
+//
+//   Format notes:
+//   - Little-endian, packed, no alignment. Strings are u32 length
+//     (including the NUL) + bytes.
+//   - Rooms are matched to the .map's rooms by name.
+//   - The portal block has NO count in the file: the game reads as many
+//     records as the .map has portals. See the portal block below.
+//
+//   History:
+//   2026.10 v1.0 initial release
+//
+//------------------------------------------------
+
+typedef enum <ubyte> {
+  no,
+  yes
+} BOOL;
+
+typedef struct {
+  UINT Length; // including the NUL
+  if (Length > 0)
+    char Text[Length];
+} STRING <read=ReadSTRING>;
+
+string ReadSTRING(STRING &s) {
+  if (s.Length > 0)
+    return s.Text;
+  return "";
+};
+
+typedef struct {
+  FLOAT x;
+  FLOAT z;
+} VECTOR2 <read=ReadVECTOR2>; // a plan (x, z) vector
+
+string ReadVECTOR2(VECTOR2 &v) {
+  local string s;
+  SPrintf(s, "(%g, %g)", v.x, v.z);
+  return s;
+};
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+} VECTOR3 <read=ReadVECTOR3>;
+
+string ReadVECTOR3(VECTOR3 &v) {
+  local string s;
+  SPrintf(s, "(%g, %g, %g)", v.x, v.y, v.z);
+  return s;
+};
+
+// a*x + b*z + c (x, z plan coordinates)
+typedef struct {
+  FLOAT a;
+  FLOAT b;
+  FLOAT c;
+} LINE2D;
+
+// normal + distance
+typedef struct {
+  VECTOR3 Normal;
+  FLOAT D;
+} PLANE;
+
+typedef struct {
+  UINT Count;
+  if (Count > 0)
+    USHORT Index[Count];
+} U16_LIST <read=Str("%d", this.Count)>;
+
+typedef struct {
+  UINT Count;
+  if (Count > 0)
+    UINT Index[Count];
+} U32_LIST <read=Str("%d", this.Count)>;
+
+typedef struct {
+  UINT Size;
+  if (Size > 0)
+    UBYTE Data[Size];
+} BLOB <read=Str("%d bytes", this.Size)>;
+
+//------------------------------------------------
+// Room geometry
+//------------------------------------------------
+
+// Floor triangle, 53 bytes. Point-in-triangle test: for each edge
+// v = a*x + b*z + c; v == 0 counts as inside, v < 0 is outside when the
+// edge's flag is 1, v > 0 when it is 0.
+typedef struct {
+  USHORT Id;
+  FLOAT Height0;  // equal to Height1 on flat floors; meaning unknown
+  FLOAT Height1;  // (not min/max: either can be the larger)
+  UINT Unknown;   // 16 on most; 28, 80, 64, 0, ... on others
+  LINE2D Edge[3];
+  BOOL InsideIsPositive[3];
+} FLOOR_TRIANGLE;
+
+// Wall, 98 bytes: lies on the .map's wall faces.
+typedef struct {
+  USHORT Id;           // 0x5000 on most; meaning unknown
+  // segment
+  VECTOR3 BBoxMin;
+  VECTOR3 BBoxMax;
+  VECTOR2 P0;
+  VECTOR2 P1;
+  VECTOR2 Direction;   // unit, P0 -> P1
+  VECTOR3 Normal;      // 3D, equals Plane.Normal
+  //
+  PLANE Plane;
+  LINE2D Line;         // the wall's line in plan
+  VECTOR2 Normal2D;
+} WALL;
+
+//------------------------------------------------
+// Areas: one per floor level, stairs or walkway of a room
+// ("shermanlevel" objects of the .map)
+//------------------------------------------------
+
+// Cell of an area grid
+typedef struct {
+  U16_LIST Walls;   // indices into the room's walls
+  U16_LIST Floors;  // indices into the room's floor triangles
+  U16_LIST Cover;   // indices into the area's cover points
+  VECTOR2 Min;
+  VECTOR2 Max;
+} AREA_GRID_CELL;
+
+// 2D spatial index over the area in plan
+typedef struct {
+  VECTOR2 Min;
+  VECTOR2 Max;
+  VECTOR2 CellSize;
+  UINT CountX;
+  UINT CountZ;
+  BOOL Valid;
+  if (CountX * CountZ > 0)
+    AREA_GRID_CELL Cell[CountX * CountZ] <optimize=false>;
+} AREA_GRID;
+
+typedef struct {
+  UINT NavPoint;    // index into the area's nav points
+  FLOAT Distance;
+} NAV_LINK <read=Str("-> %d (%g)", this.NavPoint, this.Distance)>;
+
+// Nav point: at door portals and stair ends. Nav point k of an area is
+// the door point of the area's link k (see ROOM_LINK_LIST). Patrolling
+// AI walks them.
+typedef struct {
+  VECTOR3 Position;
+  UINT LinkCount;
+  if (LinkCount > 0)
+    NAV_LINK Link[LinkCount]; // nav points reachable in a straight line
+} NAV_POINT <read=ReadVECTOR3(this.Position)>;
+
+// Cover point, generated from the room's walls. A threat at d (x, z)
+// from Position is covered when cross(DirA, d) < 0 and cross(DirB, d) > 0.
+typedef struct {
+  VECTOR3 Position;
+  VECTOR2 DirA;
+  VECTOR2 DirB;
+  BOOL Crouch;      // the wall is low
+} COVER_POINT <read=ReadVECTOR3(this.Position)>;
+
+// Precomputed path between two nav points
+typedef struct {
+  U32_LIST NavPoints;
+  FLOAT Length;
+  UINT From;
+  UINT To;
+} PATH <read=Str("%d -> %d", this.From, this.To)>;
+
+typedef struct {
+  STRING Name;            // e.g. shermanlevel200_1.0
+  STRING RoomName;        // its room's name
+  VECTOR3 BoundsMin;
+  VECTOR3 BoundsMax;
+  UINT LevelCount;
+  if (LevelCount > 0)
+    FLOAT Level[LevelCount]; // e.g. 1.0, 2.0; usually none
+  U16_LIST Floors;        // indices into the room's floor triangles
+  U16_LIST Walls;         // indices into the room's walls
+  UINT Geometry;          // always 0; when not 0 more data follows
+                          // (unknown)
+  if (Geometry != 0)
+    Warning("Area at 0x%X: own geometry not parsed", startof(this));
+  AREA_GRID Grid;
+  UINT NavPointCount;
+  if (NavPointCount > 0)
+    NAV_POINT NavPoint[NavPointCount] <optimize=false>;
+  UINT CoverPointCount;
+  if (CoverPointCount > 0)
+    COVER_POINT CoverPoint[CoverPointCount];
+  UINT PathCount;
+  if (PathCount > 0)
+    PATH Path[PathCount] <optimize=false>;
+} AREA <read=ReadSTRING(this.Name)>;
+
+//------------------------------------------------
+// Objects: carry a Rommel model and two convex hulls
+//------------------------------------------------
+
+// Hull child node, sized by Type. Only type 13 occurs in practice.
+typedef struct {
+  UINT Type;
+  switch (Type) {
+    case 0:
+    case 14: UBYTE Data[12]; break;
+    case 1:
+    case 4:
+    case 5:
+    case 9:
+    case 10:
+    case 11: UBYTE Data[4]; break;
+    case 2:  UBYTE Data[16]; break;
+    case 3:  STRING Name; UBYTE Data[8]; break;
+    case 6:  UBYTE Data[28]; break;
+    case 7:  UBYTE Data[68]; break;
+    case 8:
+      UINT NameCount;
+      if (NameCount > 0)
+        STRING Name[NameCount] <optimize=false>;
+      U32_LIST List[3] <optimize=false>;
+      break;
+    case 12: STRING Name; UBYTE Data[12]; break;
+    case 13: UINT Unknown; FLOAT Values[5]; break; // always 1, 0,0,0,1,1
+    default:
+      Warning("Hull child type %d at 0x%X not parsed", Type, startof(this));
+      Exit(-1);
+  }
+} HULL_CHILD <read=Str("type %d", this.Type)>;
+
+typedef struct {
+  UINT EdgeCount;
+  if (EdgeCount > 0)
+    USHORT Vertex[EdgeCount * 2]; // vertex index pairs
+} HULL_EDGES <read=Str("%d", this.EdgeCount)>;
+
+// Rommel convex hull: a node header, a per-vertex record block, then the
+// hull's vertices and edges
+typedef struct {
+  // node
+  STRING Name;            // empty
+  UINT Id;                // unknown, 0
+  UBYTE Flags[3];         // unknown, 00 01 00
+  VECTOR3 SphereCenter;   // bounding sphere (zero in the second hull)
+  FLOAT SphereRadius;
+  VECTOR3 Unknown3;       // unknown, zero
+  FLOAT Unknown4;
+  UINT ChildCount;
+  if (ChildCount > 0)
+    HULL_CHILD Child[ChildCount] <optimize=false>;
+  // records
+  UBYTE Unknown5[2];      // unknown, 01 01
+  UINT RecordCount;       // equals VertexCount
+  if (RecordCount > 0)
+    UBYTE Record[RecordCount * 16]; // unknown, all zero
+  UINT Columns;           // unknown, 0
+  if (RecordCount * Columns > 0)
+    UBYTE Matrix[RecordCount * Columns * 8]; // unknown
+  // hull
+  UINT VertexCount;
+  if (VertexCount > 0)
+    VECTOR3 Vertex[VertexCount];
+  HULL_EDGES Edges;
+} HULL;
+
+typedef struct {
+  FLOAT Level;            // e.g. 1.0, 2.0; meaning unknown
+  FLOAT Height;           // meaning unknown
+  BOOL HasModel;
+  if (HasModel)
+    BLOB Model;           // a length-prefixed Rommel model (e.g. "2Floor"),
+                          // not parsed here
+  HULL Hull[2] <optimize=false>;
+  BLOB Attachments;       // 4 zero bytes
+} OBJECT;
+
+//------------------------------------------------
+// Room 3D cell grid
+//------------------------------------------------
+
+typedef struct {
+  USHORT CountA;
+  if (CountA > 0)
+    USHORT A[CountA];     // unknown index list
+  USHORT CountB;
+  if (CountB > 0)
+    USHORT B[CountB];     // unknown index list
+} ROOM_GRID_CELL;
+
+typedef struct {
+  UINT CountX;
+  UINT CountY;
+  UINT CountZ;
+  VECTOR3 Min;
+  VECTOR3 Max;
+  if (CountX * CountY * CountZ > 0)
+    ROOM_GRID_CELL Cell[CountX * CountY * CountZ] <optimize=false>;
+  UBYTE Unknown;          // 1
+} ROOM_GRID;
+
+//------------------------------------------------
+// Room: its geometry, areas, objects and cell grid
+//------------------------------------------------
+
+typedef struct {
+  STRING Name;            // the .map room name ("1", "200")
+  UBYTE Unknown0;
+  if (Unknown0 == 0)
+    UBYTE Unknown1;       // only when Unknown0 is 0
+  UBYTE Unknown2;         // 0
+  BOOL HasBBox;
+  if (HasBBox) {
+    VECTOR3 BBoxMin;
+    VECTOR3 BBoxMax;
+  }
+  // geometry
+  UINT FloorCount;
+  if (FloorCount > 0)
+    FLOOR_TRIANGLE Floor[FloorCount];
+  UINT WallCount;
+  if (WallCount > 0)
+    WALL Wall[WallCount];
+  //
+  UINT AreaCount;
+  if (AreaCount > 0)
+    AREA Area[AreaCount] <optimize=false>;
+  U32_LIST Unknown3;      // empty
+  UINT ObjectCount;
+  if (ObjectCount > 0)
+    OBJECT Object[ObjectCount] <optimize=false>;
+  ROOM_GRID Grid;
+} ROOM <read=ReadSTRING(this.Name)>;
+
+//------------------------------------------------
+// File: header and rooms
+//------------------------------------------------
+
+struct {
+  FLOAT Version;          // 1.84
+  UINT Unknown;           // 0
+  UINT RoomCount;
+} Header;
+
+if (Abs(Header.Version - 1.84) > 0.000001)
+  Warning("Not a version 1.84 SHT");
+
+if (Header.RoomCount > 0)
+  ROOM Room[Header.RoomCount] <optimize=false>;
+
+//------------------------------------------------
+// Tail: portals, links, link lists
+//------------------------------------------------
+
+typedef struct {
+  INT x;
+  INT y;
+  INT z;
+} GRID_CELL;
+
+typedef struct {
+  UINT Count;
+  if (Count > 0)
+    GRID_CELL Cell[Count];
+} GRID_CELL_LIST <read=Str("%d", this.Count)>;
+
+// A .map portal's grid cells
+typedef struct {
+  GRID_CELL_LIST A;
+  GRID_CELL_LIST B;
+} PORTAL;
+
+// Link between two areas: a doorway, window or stair transition
+typedef struct {
+  UINT Kind;              // 0 door portal ("pd", "psd"), 1 window ("pw"),
+                          // 2 other portal ("p") or a shermantransition
+  STRING Name;            // the .map portal or transition name
+  UINT Index;             // its own index
+  FLOAT Y;
+  UBYTE Unknown0;         // 1 on a few transitions
+  VECTOR2 Edge0;          // the doorway's edge in plan
+  VECTOR2 Edge1;
+  STRING FromArea;
+  STRING FromRoom;
+  STRING ToArea;
+  STRING ToRoom;
+  LINE2D Line;
+  VECTOR2 Normal;
+  VECTOR3 Side[2];        // a point 50 out on each side
+  INT Unknown1[2];        // unknown; -1, -1 on windows
+} LINK <read=ReadSTRING(this.Name)>;
+
+// The number of areas of the room called name, or -1.
+int AreaCountOf(string name) {
+  local int i;
+  for (i = 0; i < Header.RoomCount; i++)
+    if (ReadSTRING(Room[i].Name) == name)
+      return Room[i].AreaCount;
+  return -1;
+};
+
+// Per room, per area of it, the area's links
+typedef struct {
+  STRING RoomName;
+  local int areas = AreaCountOf(ReadSTRING(RoomName));
+  if (areas > 0)
+    U32_LIST AreaLinks[areas] <optimize=false>; // indices into Link
+} ROOM_LINK_LIST <read=ReadSTRING(this.RoomName)>;
+
+// Skips a string at pos; returns the position after it, or -1.
+int64 SkipString(int64 pos) {
+  if (pos + 4 > FileSize())
+    return -1;
+  local uint n = ReadUInt(pos);
+  if (n > 4096 || pos + 4 + n > FileSize())
+    return -1;
+  return pos + 4 + n;
+};
+
+// Do the links and the link lists read from pos to exactly the end of the
+// file? Mirrors LINK and ROOM_LINK_LIST without declaring anything.
+int TailFits(int64 pos) {
+  local uint count, i, j, k, n;
+  local int areas;
+  local string name;
+  if (pos + 4 > FileSize())
+    return false;
+  count = ReadUInt(pos);
+  pos += 4;
+  for (i = 0; i < count; i++) {
+    pos += 4;                             // Kind
+    pos = SkipString(pos);                // Name
+    if (pos < 0)
+      return false;
+    pos += 4 + 4 + 1 + 16;                // Index, Y, Unknown0, Edge
+    for (j = 0; j < 4; j++) {             // From/To area/room
+      pos = SkipString(pos);
+      if (pos < 0)
+        return false;
+    }
+    pos += 12 + 8 + 24 + 8;               // Line, Normal, Side, Unknown1
+    if (pos > FileSize())
+      return false;
+  }
+  if (pos + 4 > FileSize())
+    return false;
+  count = ReadUInt(pos);
+  pos += 4;
+  for (i = 0; i < count; i++) {
+    if (SkipString(pos) < 0)
+      return false;
+    name = ReadString(pos + 4, ReadUInt(pos));
+    pos = SkipString(pos);
+    areas = AreaCountOf(name);
+    if (areas < 0)                        // a list for no room
+      return false;
+    for (k = 0; k < areas; k++) {
+      if (pos + 4 > FileSize())
+        return false;
+      n = ReadUInt(pos);
+      pos += 4 + 4 * (int64)n;
+      if (pos > FileSize())
+        return false;
+    }
+  }
+  return pos == FileSize();
+};
+
+// The portal block has no count: the game reads one record per portal of
+// the .map, which this template cannot see. A portal is read only while
+// the rest (links + link lists, the lists naming rooms of this file) does
+// not read to exactly the end of the file; the first fit is taken.
+local int PortalCount = 0;
+while (!TailFits(FTell())) {
+  if (FTell() + 8 > FileSize()) {
+    Warning("Portal block: the links never fit");
+    break;
+  }
+  PORTAL Portal;
+  PortalCount++;
+}
+
+UINT LinkCount;
+if (LinkCount > 0)
+  LINK Link[LinkCount] <optimize=false>;
+
+UINT LinkListCount;
+if (LinkListCount > 0)
+  ROOM_LINK_LIST LinkList[LinkListCount] <optimize=false>;

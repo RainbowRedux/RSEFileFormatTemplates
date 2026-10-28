@@ -1,0 +1,225 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template
+//
+//      File: SOB.bt
+//   Authors: Alexandr Evdokimov
+//   Version: 1.1
+//   Purpose: Rainbow six .sob file format (static models; Rogue Spear ships .sob in this layout too)
+// File Mask: *.sob
+//
+//   History:
+//
+//   2026.10 v1.1 texture address mode, geometry flags, mesh and face fields; which fields the game
+//         skips; the face's mesh index (was "Distance"), the UV's third coordinate
+//   2019.01 v1.0
+//   2018.04 v0.6
+//   2016    v0.5 initial release
+//
+//   A .map's materials and geometry are the same records. Based on SOB.bt in AlexKimov/RSE-file-formats.
+//------------------------------------------------
+
+string readCString()
+{
+  local uint Length;
+  local string Name;
+  Length = ReadInt(FTell());
+  FSkip(4);
+  Name = ReadString(FTell());
+  FSkip(-4);
+  return Name;
+};
+
+typedef struct {
+  UINT Red;
+  UINT Green;
+  UINT Blue;
+} COLOR; // 0-255
+
+typedef enum <ubyte> {
+  no = 0,
+  yes = 1
+} BOOL; // bool data type
+
+typedef struct {
+  UINT Length; // counts the NUL
+  char Text[Length];
+} CSTRING;
+
+// Rainbow Six: SectionSize counts the bytes after itself, to the record's end
+// (Rogue Spear's .qob/.rob: after the name). ("Version", value) is absent on older records.
+typedef struct {
+  UINT SectionSize;
+  UINT ID;
+  if (readCString() == "Version")
+  {
+    struct {
+      CSTRING Name <name="Version">;
+      UINT Value;
+    } VERSION;
+  }
+  CSTRING Name <name="Name">;
+} SECTION_HEADER <name="Header">;
+
+// Direct3D's D3DTADDRESS_* values. The game ignores the stored mode: textures wrap.
+typedef enum <uint> {
+  WRAP = 1,
+  CLAMP = 3
+} TEXTURE_ADDRESS_MODE;
+
+// Geometry flags (GF_*). 0 in .sob meshes; they matter in .map geometry.
+BitfieldRightToLeft();
+typedef struct {
+  DWORD Climbable      : 1; // 0x1  ladders, nets
+  DWORD NoCollide2D    : 1; // 0x2  no floor triangles, no 2-D collision
+  DWORD Invisible      : 1; // 0x4  not drawn, not hit by line tests
+  DWORD Unknown8       : 1; // 0x8  not hit by line tests (aiming, camera, blasts); still drawn
+  DWORD FloorPolygon   : 1; // 0x10 floor surface
+  DWORD NoCollide3D    : 1; // 0x20
+  DWORD ForceFloor     : 1; // 0x40 a floor even when steep (ramps, stairs)
+  DWORD NotShownInPlan : 1; // 0x80
+  DWORD Unused         : 24;
+} GEOMETRY_FLAGS;
+
+typedef struct {
+  UINT x;
+  UINT y;
+  UINT z;
+} VECTOR3_LONG;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+} VECTOR3;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+} POINT2;
+
+// BeginModel token
+
+CSTRING BeginModel <name="BeginModel token">;
+
+//--------------------
+// MaterialList
+// --------------------
+
+typedef struct {
+  SECTION_HEADER Header; // id 2, version 1 or none
+  CSTRING Name <name="Texture filename">; // "NULL": untextured
+  struct {
+    FLOAT Opacity; // the material's alpha: below 1 drawn translucent
+    FLOAT Emissive; // 0 on most; textured materials only: drawn at this flat brightness
+    TEXTURE_ADDRESS_MODE AddressMode; // skipped by the game
+    COLOR Ambient; // stored, but the lighting uses the diffuse colour only
+    COLOR Diffuse;
+    COLOR Specular; // stored, not used by the lighting
+    FLOAT SpecularLevel; // stored, not used by the lighting
+    BOOL twoSided; // drawn unculled (Rogue Spear skips it)
+  } MATERIAL_PROPERTIES <name="Properties">;
+} MATERIAL <name=MaterialName>;
+
+string MaterialName(MATERIAL &material)
+{
+  return "Name: " + material.Header.Name.Text;
+}
+
+struct {
+  SECTION_HEADER Header; // id 8 "MaterialList"
+  UINT Count <name="Number of materials">;
+  typedef struct (int arraySize) {
+    MATERIAL array[arraySize] <optimize=false>;
+  } MATERIALS;
+  MATERIALS Materials(Count) <name="Materials">;
+} MATERIAL_LIST <name="Material list">;
+
+//--------------------
+// GeometryList
+// --------------------
+
+// A mesh tags a set of the object's faces; every face is in exactly one mesh.
+typedef struct  {
+   struct {
+     UINT Unknown; // 6; skipped by the game
+     CSTRING Name; // "NONE"; in maps "static..." collides as a box
+   } HEADER;
+   UINT VertexCount;
+   UINT VertexIndexes[VertexCount]; // empty in maps, not always in .sob; skipped by the game
+   UINT FaceCount;
+   UINT FaceIndexes[FaceCount];
+   GEOMETRY_FLAGS GeometryFlags;
+   CSTRING Name <name="String">; // "NONE"; skipped by the game
+   UINT Unknown; // 0, a single bit (0x1 .. 0x40) or 0xCDCDCDCD (MSVC debug-heap fill); skipped by the game
+} MESH <name=objectName>;
+
+string objectName(MESH &Mesh)
+{
+  return Mesh.HEADER.Name.Text;
+}
+
+typedef struct {
+
+  SECTION_HEADER Header; // id 3 (in maps also 4: room), version 2 or none
+  if (exists(Header.VERSION))
+  {
+    UINT Unknown; // 0; skipped by the game
+    UINT Unknown; // 0; skipped by the game
+  };
+
+  UINT Count <name="Number of vertexes">;
+  typedef struct (int arraySize) {
+    VECTOR3 array[arraySize];
+  } VERTEXES;
+  VERTEXES Vertexes(Count ) <name="Vertexes">;
+
+  // What a face corner takes besides its position.
+  struct {
+    UINT Count;
+    typedef struct {
+      VECTOR3 Normal <name="Normal">;
+      POINT2 UV <name="UV">;
+      FLOAT W; // third texture coordinate (U, V, W are one vector); the game drops it
+      COLOR Color <name="Color">; // usually 128 grey; the colour of faces without a material
+    } V_DATA;
+    V_DATA VertexData[Count] <name="Vertex parameters">;
+  } VERTEX_DATA <name="Vertex data">;
+
+  struct {
+    UINT Count;
+    typedef struct {
+      VECTOR3_LONG Indexes <name="Vertex indices">;
+      VECTOR3_LONG Indexes <name="Vertex Param indices">;
+      VECTOR3 Normal <name="Normal">; // normalize((v1-v0) x (v2-v0))
+      UINT MeshIndex; // the mesh that lists this face; the game takes its geometry flags through it
+      INT MaterialIndex; // -1: none
+    } FACE  <name="Face">;
+    FACE FaceData[Count]  <name="Faces">;
+  } FACE_DATA <name="Face data">;
+
+  struct {
+    UINT Count;
+    typedef struct (int arraySize) {
+      MESH array[arraySize] <optimize=false>;
+    } MESH_ARRAY;
+    MESH_ARRAY Meshes(Count);
+  } MESHES <name="Meshes">;
+} OBJECT <name=ObjectName>;
+
+string ObjectName(OBJECT &object)
+{
+  return "Name: " + object.Header.Name.Text;
+}
+
+struct {
+  SECTION_HEADER Header; // id 7 "GeometryList"
+  UINT Count <name="Object Count">;
+  typedef struct (int arraySize) {
+    OBJECT array[arraySize] <optimize=false>;
+  } OBJECTS;
+  OBJECTS Objects(Count) <name="Objects">;
+}  GEOMETRYLIST  <name="GeometryList Section">;
+
+// EndModel token
+
+CSTRING EndModel <name="EndModel token">;

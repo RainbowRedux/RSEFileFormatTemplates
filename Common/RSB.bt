@@ -3,13 +3,15 @@
 //
 //      File: RSB.bt
 //   Authors: Alexander Evdokimov
-//   Version: 1.4
+//   Version: 1.5
 //   Purpose: Red storm bitmap (RSB) file
 //   Format Desription: 
 //   English: https://github.com/AlexKimov/RSE-file-formats/wiki/RSB-File-Format
 //   Russian: https://github.com/AlexKimov/RSE-file-formats/wiki/RSB-File-Format-RUS
 //
 //   History: 
+//   2026.10 v1.5 compare function as D3DCMPFUNC - 1, destination blend list fixed, Game Properties
+//            as bits, version 2 tail, reference value unsigned, value notes
 //   2018.04 v1.4 added commentaries, minor fixes
 //   2018.01 v1.3 fix channel order (boristsr), new Channel struct
 //   2017.12 v1.2 fix RSB version 0 structures
@@ -66,11 +68,16 @@ typedef enum <uint> {
   sBoth_Inverse_Source_Alpha 
 } SOURCE_FUNCTION_PARAMETER <comment="Source blending functions">; 
 
+// The destination list matches the source list. Common GR pairs (source / destination): 2 / 3 (alpha blend);
+// with AlphaBlending on also 1 / 1 (additive: sun, glow, lensflare), 2 / 1 (fire, muzzle flash) and 0 / 4
+// (multiply: night-vision masks), which only reads as a blend with 4 = Source_Color. The names are GR's
+// texture tool's, not D3DBLEND's order.
 typedef enum <uint> {
   dZero, 
   dOne, 
   dSource_Alpha, 
-  dInverse_Source_Alpha_Source_Color, 
+  dInverse_Source_Alpha, 
+  dSource_Color, 
   dInverse_Source_Color, 
   dDestination_Color, 
   dInverse_Destination_Color, 
@@ -78,13 +85,17 @@ typedef enum <uint> {
   dBoth_Inverse_Source_Alpha 
 } DESTINATION_FUNCTION_PARAMETER <comment="Destination blending functions">; 
 
+// Compare function: D3DCMPFUNC - 1. GR files with AlphaTesting on use 6 (Greater_Equal) or 4 (Greater) with
+// reference 128 (sometimes 120): an alpha threshold of one half either way.
 typedef enum <uint> {
-  Never, 
-  Less, 
-  Equal, 
-  Less_Equal, 
-  Greater_Equal, 
-  Always, 
+  Never,          // 0
+  Less,           // 1
+  Equal,          // 2
+  Less_Equal,     // 3
+  Greater,        // 4
+  Not_Equal,      // 5
+  Greater_Equal,  // 6
+  Always          // 7
 } COMPARE_FUNCTION_PARAMETER <comment="Compare function to set up texture transparency with reference value.">;
 
 /*
@@ -146,7 +157,7 @@ typedef enum <int> {
   Foliage, 
   Gravel, 
   Glass_Shards,
-  unset = 4294967295
+  unset = -1 // common in GR files with properties
 } SURFACE_TYPE; 
 
 typedef struct {
@@ -165,6 +176,8 @@ struct {
     Dominant Species, Force 21, Rainbow six (1998) + addon, Rogue Spear(2000) + addons, Freedom First Resistance  
     0 - 9 Ghost Recon (+addons), The Summ of All Fears
     9 - 11 Rainbow Six LockDown.
+
+    PC releases: R6 uses version 0; RS version 1 (some 0); GR versions 1, 2, 4, 5 and 6 (mostly 5 and 6).
 
     files with 3 and 7 are something virtual or may be hiding somewhere in a game folder, waiting, who knows...
   */
@@ -320,7 +333,7 @@ if (HEADER.version == 0) {
       ubyte Alpha : BitMask.alpha_bits <name="Alpha">;  
     } PIXEL2 <name="Pixel">;
     typedef struct (int arraySize) {
-      PIXEL2 array[arraySize];
+      PIXEL2 array[arraySize] <optimize=true>; // fixed-size pixels
     } PIXEL_ARRAY2;
 
   PIXEL_ARRAY2 PixelArray(HEADER.width*HEADER.height) <name="Pixel Array (16-bit image)">;
@@ -358,7 +371,12 @@ string channelName(Channel &channel){
 }
 
 // Files with HEADER.version == 0..1 had no Properties section
-// Last section for the HEADER.version == 2 is 46 bit long and seems always to be empty (filled with 0 bits), therefore ignore it
+// Version 2 ends with 46 bytes, all zero.
+if (HEADER.version == 2)
+  UBYTE UnknownTail[46] <name="Unknown (version 2)">;
+
+// Ghost Recon's texture properties (versions 3-9). Some Training_afternoon_* skyboxes in Mods_Textures end
+// with 65 junk bytes (a frame count past the end).
 if (HEADER.version > 2) {    
     struct{
        // Surface Channels, GR feature
@@ -368,7 +386,7 @@ if (HEADER.version > 2) {
 
          if (SurfaceChannelsCount > 0) {            
              UINT size;
-             BYTE SurfaceChannelsData[size]; // garbage data
+             BYTE SurfaceChannelsData[size]; // garbage data (kept as stored)
              Channel Array[SurfaceChannelsCount] <optimize=false>;  
            };
          }SurfaceData <name="Surface Channels">; 
@@ -381,8 +399,10 @@ if (HEADER.version > 2) {
          UINT MN;
        };
 
+       // Flag bytes: 0 or 1; Animation also 3 or 4 (terrain textures such as m01_caves.rsb). A few files hold
+       // other bytes here (240, 94, ...) and implausible values in some fields that follow; kept as stored.
        BOOL AlphaBlending <name="AlphaBlending", comment="Enables texture blending">;
-       BOOL AlphaTesting <name="AlphaTesting">;
+       BOOL AlphaTesting <name="AlphaTesting">; // enables CompareFunction
        BOOL Sampling <name="Sampling", comment="Enables Sampling properties">; // **
        BOOL Animation <name="Animation", comment="Enables RSB flipbook animation">;
        BOOL Scrolling <name="Scrolling", comment="Enables Scrolling animation">;
@@ -405,33 +425,26 @@ if (HEADER.version > 2) {
         if the surface is shot through. 
  
        Water - set water properties for the RSB 
+ 
+       Bits 1, 2, 4, 8 and 16 in that order; they combine (e.g. 11, 7, 3, 23, 19). The water bit is
+       also on opaque textures (m07_river_noblend.rsb), so it reads as gameplay, not looks.
        */
 
        UINT GameProperties <name="Game Properties", comment="Additional texture properties">;
-       if (GameProperties == 16) { 
-         Printf("Game Properties: Water"); 
-       }
-       else
-         if (GameProperties > 0) {
-           Printf("Game Properties: ");
-           if (GameProperties & 0b00000001) {
-             Printf("Gunshot Transparent,");
-            };
-           if (GameProperties & 0b00000010) {
-             Printf("Grenade Transparent,"); 
-           };
-           if (GameProperties & 0b00000100) {
-             Printf("Line-of-sight Transparent,");
-           }; 
-           if (GameProperties & 0b00001000) {
-             Printf("Foliage");
-           };  
-         };
+       if (GameProperties > 0) {
+         Printf("Game Properties:");
+         if (GameProperties & 1) Printf(" Gunshot Transparent");
+         if (GameProperties & 2) Printf(" Grenade Transparent");
+         if (GameProperties & 4) Printf(" Line-of-sight Transparent");
+         if (GameProperties & 8) Printf(" Foliage");
+         if (GameProperties & 16) Printf(" Water");
+         Printf("\n");
+       };
     
        SOURCE_FUNCTION_PARAMETER SourceFunction <name="Source Function">;
        DESTINATION_FUNCTION_PARAMETER DestinationFunction <name="Destination Function">;
        COMPARE_FUNCTION_PARAMETER CompareFunction <name="Compare Function">;
-       BYTE ReferenceValue <name="Reference Value">;
+       UBYTE ReferenceValue <name="Reference Value">; // 0-255: 128 in alpha-tested files (sometimes 120)
     
        struct { 
          SCROLLING_TYPE ScrollingType <name="Scrolling Type">;    
@@ -450,7 +463,7 @@ if (HEADER.version > 2) {
               } TEXTURE_NAME <optimize=false, name=textureName>;
         
               typedef struct (int arraySize) {
-                TEXTURE_NAME array[arraySize];
+                TEXTURE_NAME array[arraySize] <optimize=false>;
               } TEXTURE_ARRAY <optimize=false>;
    
              TEXTURE_ARRAY RSBTextureArray(TextureCount) <optimize=false, name="Textures List">; 
@@ -458,12 +471,12 @@ if (HEADER.version > 2) {
        } ANIMATION <name="Flipbook Animation">; 
 
        if (HEADER.version > 4) {        
-         UINT MapsCount <name="MipMaps Count">;   
-         UINT SubsamplingPriority <name="Subsampling Priority">;  
+         UINT MapsCount <name="MipMaps Count">; // always 0
+         UINT SubsamplingPriority <name="Subsampling Priority">; // always 0
        };
 
        BOOL Damaged <name="Damaged">; // **  
-       if (Damaged == yes) {
+       if (Damaged != no) { // any non-zero value: a damaged texture name follows
          UINT TextureNameLength; // 
          if (TextureNameLength > 0) {
              char DamagedTextureName[TextureNameLength];
@@ -471,7 +484,7 @@ if (HEADER.version > 2) {
        }; 
     
 
-       SURFACE_TYPE SurfaceType <name="Surface Type">;   
+       SURFACE_TYPE SurfaceType <name="Surface Type">; // -1 unset   
     } RSB_PROPERTIES <name="Texture Properties">;
 
   // mipmaps if exist are always in the end of the file, **

@@ -3,34 +3,27 @@
 //
 //      File: CRP(rsp).bt
 //   Authors: Alexander Evdokimov
-//   Version: 0.1
-//   Purpose: Rainbow six Rogue Spear CRP files
+//   Version: 0.2
+//   Purpose: Rainbow six Rogue Spear CRP files (character mesh, one LOD)
 // File Mask: *.crp
+//  ID Bytes: 66 66 E6 3F
 //
-//   History: 
+//   History:
 //
 //   2018.05 v0.1 initial release
+//   2026.10 v0.2 body parts per bone, model and mesh headers, bind positions, per-mesh geometry, trailer
 //------------------------------------------------
+//
+// The R6 parts, then a model header, the bind positions and one mesh per material. Each mesh has its own
+// vertex attributes (UV, normal, colour); faces index the shared bind positions and the mesh's attributes.
+// No baked lighting (no .bcl): every colour is 0.5 grey.
 
 const uint numberOfBones = 18;
 
-typedef struct { 
-  UINT Length;  
+typedef struct {
+  UINT Length;
   char Text[Length];
-} CSTRING; 
-
-typedef struct {
-  UINT Red;
-  UINT Green;
-  UINT Blue;
-  UINT Alpha;
-} VECTOR_4UI;
-
-typedef struct {
-  UINT X;
-  UINT Y;
-  UINT Z;
-} VECTOR_3UI;
+} CSTRING;
 
 typedef struct {
   UINT16 X;
@@ -57,151 +50,134 @@ typedef struct {
   FLOAT Y;
 } VECTOR_2F;
 
+// Skeleton bone order (BoneIndex in the .SKL, the order of a .DAM frame's quaternions).
+string BoneName(int i) {
+  switch (i) {
+    case 0: return "Hips";        case 1: return "Chest";        case 2: return "Neck";
+    case 3: return "Head";        case 4: return "LeftCollar";   case 5: return "LeftUpArm";
+    case 6: return "LeftLowArm";  case 7: return "LeftHand";     case 8: return "RightCollar";
+    case 9: return "RightUpArm";  case 10: return "RightLowArm"; case 11: return "RightHand";
+    case 12: return "LeftUpLeg";  case 13: return "LeftLowLeg";  case 14: return "LeftFoot";
+    case 15: return "RightUpLeg"; case 16: return "RightLowLeg"; case 17: return "RightFoot";
+  }
+  return "?";
+}
+
+// Part k is skinned to bone PartToBone(k), the same for every character, as in R6.
+int PartToBone(int k) {
+  switch (k) {
+    case 0: return 0;   case 1: return 1;   case 2: return 12;  case 3: return 15;  case 4: return 16;
+    case 5: return 17;  case 6: return 13;  case 7: return 14;  case 8: return 2;   case 9: return 4;
+    case 10: return 8;  case 11: return 9;  case 12: return 10; case 13: return 11; case 14: return 5;
+    case 15: return 6;  case 16: return 7;  case 17: return 3;
+  }
+  return -1;
+}
+
+// The model's and each mesh's header.
+typedef struct {
+  UINT Length;
+  char Name[Length]; // the model's ends in NUL; meshes' are empty (Length 0)
+  UINT Unknown1;     // always 0
+  UBYTE Unknown2[3]; // 0 1 0, or 1 1 0 on blend-5 meshes
+  FLOAT Unknown3[8]; // all 0 (v0.1 read two x, y, z, unknown quads)
+  UINT BlendMode;    // model 0; meshes 3, or 5 (hair, glasses)
+  if (BlendMode == 5)
+    UINT BlendData[8]; // always 0 0 2 3 14 1 3 0
+  if (BlendMode > 0)
+    UINT BlendArg;     // always 12
+} HEADER_RS;
+
 struct {
   FLOAT Version <name="Version">; // 1.8
 } HEADER <name="Header">;
 
 //-------------------------------------------------
 
-struct {
-  typedef struct {
-    UINT VertexCount <name="Vertex count">;  
-    struct {
-      UINT Index[VertexCount];
-    } INDEX_ARRAY <name="Vertex index array">;
-    struct {
-       VECTOR_3F CoordinatesArray[VertexCount] <name="Vertex">;
-    } COORDINATES <name="Vertex coordinates array">;
-  } BODYP <optimize=false, name="Body part related to bone">;
+typedef struct (int k) {
+  local int Part = k;
+  local int Bone = PartToBone(k);
+  UINT VertexCount <name="Vertex count">;
+  UINT Index[VertexCount] <name="Bind position index">;
+  VECTOR_3F Local[VertexCount] <name="Position in the bone's space">;
+} BODYP <read=bodyPartName>;
 
-  BODYP BodyParts[numberOfBones]; // 18 bones total
-} BODY <name="Weight indexes">;
+string bodyPartName(BODYP &p) {
+  return Str("part %d -> bone %d %s, %d vertices", p.Part, p.Bone, BoneName(p.Bone), p.VertexCount);
+}
+
+// Some files have vertices that no part lists.
+struct {
+  local int k;
+  for (k = 0; k < numberOfBones; k++)
+    BODYP BodyParts(k);
+} BODY <name="Parts (vertices per bone)">;
 
 //-------------------------------------------------
 
 struct {
-  UINT Length;
-  char Name[Length] <name="Model name">;
-  UINT Unknown;
-  BYTE Unknown;
-  BYTE Unknown;
-  BYTE Unknown;
-  //
+  HEADER_RS Header;
+  UBYTE Unknown1[2]; // 1 1
+  UINT Unknown2[2];  // 0 0
+} U <name="Model header">;
+
+
+typedef struct {
+  UINT Unknown1; // always 0
   FLOAT X;
   FLOAT Y;
   FLOAT Z;
-  FLOAT Unknown;
-  //
-  FLOAT X;
-  FLOAT Y;
-  FLOAT Z;
-  FLOAT Unknown;
-  UINT A;
-  if (A > 0)
-  {
-    UINT Unknown;
-  };
-  //
-  BYTE Unknown;
-  BYTE Unknown;
-  UINT Unknown; 
-  // !?? 
-  UINT Unknown; 
-  //
-} U <name="Unknown">; 
+  UINT Unknown2[4]; // always 0
+} VERTEX_S <name="Bind position">;
 
-
-typedef struct {  
-  FLOAT Unknown; // 0
-  FLOAT X;
-  FLOAT Y;
-  FLOAT Z;
-  FLOAT Unknown; // 0
-  UINT Unknown; // 0
-  UINT Unknown; // 0
-  UINT Unknown; // 0 
-} VERTEX_S <name="Vertex">;
-
+// Model space: the parts' vertices in the skeleton's rest pose (except in maf_max and for vertices no part
+// lists).
 struct {
   UINT Count;
-  typedef struct (int arraySize) {
-      VERTEX_S array[arraySize] <optimize=false>;
-  } VERTEXES2;
-  VERTEXES2 Vertexes(Count) <name="Vertexes">;
-} VERTEXES <name="Vertexes (Static Pose)">;
+  VERTEX_S Vertexes[Count];
+} VERTEXES <name="Bind positions">;
 
 //-------------------------------------------------
 
-UINT MeshCount;
+UINT MeshCount; // one per material
 typedef struct {
   struct {
+    HEADER_RS Header;
     UINT Length;
-    char Name[Length];
-    UINT Unknown;  
-    BYTE Unknown;
-    BYTE Unknown;
-    BYTE Unknown;
-    //
-    FLOAT X;
-    FLOAT Y;
-    FLOAT Z;
-    FLOAT Unknown;
-    //
-    FLOAT X;
-    FLOAT Y;
-    FLOAT Z;
-    FLOAT Unknown;
+    CHAR TextureFileName[Length]; // the exporter's full path, \roguespear_latest\data\character\...\x.bmp
 
-    UINT TransparencyFlag <name="Effects transparency(BlenMode)??">; // 3, 5
-    //  
-    if (TransparencyFlag > 0)
-    { 
-      if (TransparencyFlag == 5) // transparent
-        UINT Data[8];
-      UINT Unknown; // 12
-    }  
-  
-    UINT Length;
-    CHAR TextureFileName[Length];
-
-    UINT Unknown; // 3, 4
-    UINT Unknown; // 0
-    UINT Unknown; // 1
-    UINT Unknown; // 13
-    UINT Unknown; // 6
-    UINT Unknown; // 0
-    FLOAT Unknown1[4];
-    UINT Unknown; // 7
-    FLOAT Unknown2[16];
-    UINT Unknown; // 0
-    BYTE Unknown; // 1
-    BYTE Unknown; // 1
-  } UNKNOWN_DATA <name="Texture properties?">;
+    UINT Unknown0[6];    // 3 0 1 13 6 0 (4 0 1 13 6 0 on blend 5)
+    FLOAT Unknown1[4];   // 0 0 1 1
+    UINT Unknown2;       // always 7
+    FLOAT Unknown3[16];  // 1 1 1 1, 1 1 1 1, .898 .898 .898 1, 0 0 0 1
+    UINT Unknown4;       // always 0
+    UBYTE Unknown5[2];   // 1 1
+  } UNKNOWN_DATA <name="Material">;
   //
   struct {
-    UINT VertexCount;
-    VECTOR_4F Color[VertexCount]; 
+    UINT VertexCount; // = the attribute count below
+    VECTOR_4F Color[VertexCount]; // RGBA; equal to the attributes' colours
 
-    UINT count2; 
-    VECTOR_2F Unnkown[VertexCount*count2];
+    UINT UVSetCount; // always 1
+    VECTOR_2F UVSets[VertexCount*UVSetCount]; // equal to the attributes' UVs
 
     struct {
-      UINT VertexCount; 
-      VECTOR_4F Color2[VertexCount];  
-      UINT unknown; 
+      UINT VertexCount;
+      VECTOR_4F Color2[VertexCount];  // RGBA; 0.5 grey
+      UINT Unknown; // always 1
       VECTOR_2F UVCoordinates[VertexCount];
-      VECTOR_3F Normals[VertexCount] <name="Normals?">; 
+      VECTOR_3F Normals[VertexCount];
     } VERTEX_ATTRIBUTES;
 
     struct {
       UINT FaceCount;
-      struct {   
-        VECTOR_4F FaceNormal[FaceCount]; 
-        VECTOR_3UI16 VertIndexes[FaceCount] <name="Vertex indexes">; 
-        VECTOR_3UI16 TextureUVIndexes[FaceCount] <name="UV indexes">;
+      struct {
+        VECTOR_4F FacePlane[FaceCount]; // normal, d: n = normalise((v1-v0) x (v2-v0)), d = -n.v0
+        VECTOR_3UI16 VertIndexes[FaceCount] <name="Bind position indexes">;
+        VECTOR_3UI16 TextureUVIndexes[FaceCount] <name="Attribute indexes (this mesh's)">;
       } FACES;
     } FACE_DATA;
-  } GEOMETRY_DATA;       
+  } GEOMETRY_DATA;
 } MESH <optimize=false, name="Mesh">;
 typedef struct (uint count) {
   MESH  array[count];
@@ -209,3 +185,7 @@ typedef struct (uint count) {
 MESH_ARRAY Meshes(MeshCount) ;
 
 //-------------------------------------------------
+
+// 17-37 bytes of the exporter's heap (0xCD fill, pointers, string fragments).
+if (!FEof())
+  UBYTE Trailer[FileSize() - FTell()];

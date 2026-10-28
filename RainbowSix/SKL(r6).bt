@@ -3,21 +3,27 @@
 //
 //      File: SKL.bt
 //   Authors: Alexandr Evdokimov
-//   Version: 0.5
-//   Purpose: Rainbow Six SKL File
-// 
-//   History: 
+//   Version: 0.6
+//   Purpose: Rainbow Six SKL File (character skeleton, <name>_a.SKL, shared by the 3 CRP LODs)
+//
+//   History:
 //   2017 v0.5 Initial release
+//   2026.10 v0.6 sibling/child flags, bone index, per-bone bounds
 //
 //------------------------------------------------
+//
+// A bone count, then the tree serialised post-order: each node is
+//   [UBYTE HasSibling, next-sibling subtree] [UBYTE HasChild, first-child subtree] BONE
+// so the root (Hips) is the last record (the two flags were swapped in v0.5). A node's children are its
+// first child and that child's sibling chain. 18 bones.
 
 typedef struct {
-  struct { 
-    FLOAT x;        
+  struct {
+    FLOAT x;
     FLOAT y;
     FLOAT z;
   } XAXIS;
-  struct { 
+  struct {
     FLOAT x;
     FLOAT y;
     FLOAT z;
@@ -28,73 +34,77 @@ typedef struct {
     FLOAT z;
   } ZAXIS;
   struct {
-    FLOAT Y;
+    FLOAT Y; // order as in v0.5; all three always 0
     FLOAT X;
     FLOAT Z;
   } POSITION;
-} TRANSFORMATION_MATRIX; 
+} TRANSFORMATION_MATRIX; // always identity, zero position
 
 
 UINT BoneCount;
 
 typedef struct {
-  // relative
+  // relative to the parent; the bind pose is translation-only
   struct {
-    FLOAT X;   
+    FLOAT X;
     FLOAT Y;
     FLOAT Z;
-  } POSITION_REL; 
-  // 
+  } POSITION_REL;
+  // always identity (0, 0, 0, 1)
   struct {
-    FLOAT X;   
+    FLOAT X;
     FLOAT Y;
     FLOAT Z;
     FLOAT W;
   } ROTATION_REL;
   //
   TRANSFORMATION_MATRIX Matrix;
-  // absolute
+  // absolute: the sum of POSITION_REL down the tree
   struct {
-    FLOAT X;   
+    FLOAT X;
     FLOAT Y;
     FLOAT Z;
   } POSITION_ABS;
-  // 
+  // always identity (0, 0, 0, 1)
   struct {
-    FLOAT X;   
+    FLOAT X;
     FLOAT Y;
     FLOAT Z;
     FLOAT W;
   } ROTATION_ABS;
-  // 
-  FLOAT X;   
+  // meaning unknown; always 0, 0, 0, 1
+  FLOAT X;
   FLOAT Y;
   FLOAT Z;
   FLOAT W;
   //
   UINT Length;
-  CHAR Name[Length];
+  CHAR Name[Length]; // NUL included
   //Printf("\"" + Name + "\", ");
-  UINT BoneIndex;
-  BYTE A;
-  if (A == 1)
+  UINT BoneIndex; // numbers the .DAM quaternions and the CRP parts' bones
+  BYTE HasBounds; // always 1
+  if (HasBounds == 1)
   {
-    //
-    FLOAT X;   
-    FLOAT Y;
-    FLOAT Z;
-    //
-    FLOAT Unknown;
-    //
-    FLOAT X;   
-    FLOAT Y;
-    FLOAT Z;
-    //
-    FLOAT X;   
-    FLOAT Y;
-    FLOAT Z;
-    //
-    FLOAT Unknown;
+    // Per-bone bounds in bone space; use unknown (hit or culling volumes).
+    struct {
+      // around the bone's segments to its children (a leaf: around its part's vertices)
+      FLOAT X;
+      FLOAT Y;
+      FLOAT Z;
+      FLOAT Radius;
+    } SPHERE;
+    // a capsule along the bone's y axis through the box of its part's vertices and children's offsets
+    struct {
+      FLOAT X;
+      FLOAT Y;
+      FLOAT Z;
+    } CAPSULE_BOTTOM; // box centre x/z, box min y
+    struct {
+      FLOAT X;
+      FLOAT Y;
+      FLOAT Z;
+    } CAPSULE_TOP; // box centre x/z, box max y
+    FLOAT CapsuleRadius; // 0.85 x the farthest vertex's distance from the axis
   }
 } BONE <optimize=false, name=getBoneName>;
 
@@ -105,13 +115,13 @@ string getBoneName(BONE &Bone)
 }
 
 void ReadBone()
-{  
-  BYTE Cycle;
-  if (Cycle == 1)
-    ReadBone();
-  BYTE Cycle;
-  if (Cycle == 1)
-    ReadBone(); 
+{
+  UBYTE HasSibling;
+  if (HasSibling == 1)
+    ReadBone(); // the next sibling's subtree
+  UBYTE HasChild;
+  if (HasChild == 1)
+    ReadBone(); // the first child's subtree
 
   BONE Bone;
 

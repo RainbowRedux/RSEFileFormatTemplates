@@ -3,19 +3,23 @@
 //
 //      File: CHR.bt
 //   Authors: AlexKimov
-//   Version: 1.0
-//   Purpose: Rainbow Six Rogue Spear DAM file
-// 
-//   History: 
+//   Version: 1.1
+//   Purpose: Rainbow Six Rogue Spear DAM file (character animation clip, data/motion/*.dam)
+//
+//   History:
+//   2026.10 v1.1 version header, played frames, stored keys, key step, displacement per frame
 //------------------------------------------------
+//
+// The R6 layout (DAM(r6).bt) after a 16-byte header, but storing keys: KeyCount = ceil(FrameCount / Step).
+// Where exactly the keys fall between frames, and how they are interpolated, is unknown.
 
 struct {
-  BYTE Magic[4];
+  FLOAT Version; // 1.365 (was "BYTE Magic[4]")
 } FILE_HEADER;
 
-UINT KeyCount <name="KeyCount?">; 
-UINT FrameCount; 
-UINT AnimationSpeed;
+UINT FrameCount <name="Frames played">;
+UINT KeyCount <name="Stored keys">;     // (was "FrameCount")
+UINT Step <name="Frames between keys">; // 4, 2 or 1 (was "AnimationSpeed")
 
 typedef struct {
   FLOAT X;
@@ -30,22 +34,26 @@ typedef struct {
 } POSITION;
 
 typedef struct {
-  UINT BoneCount;
-  POSITION BonePos;
+  UINT BoneCount; // 18
+  POSITION BonePos; // the root (Hips) position
+  // per bone in skeleton index order (SKL BoneIndex), parent-relative, as R6
   struct {
     ROTATION Rot;
-  } Bone[BoneCount]; 
+  } Bone[BoneCount];
 } ANIMATION_FRAME;
 
-ANIMATION_FRAME Frame[FrameCount] <name="Frames">;
+ANIMATION_FRAME Frame[KeyCount] <name="Keys", optimize=false>;
 
 UINT Length;
-CHAR Name[Length];
+CHAR Name[Length]; // NUL included
+// As in R6; whether the displacement is per played frame or per key is unknown.
 struct {
-  FLOAT Unknown;
-  FLOAT AnimationSpeed;
-  FLOAT Speed <name="in-game speed of the character">;
-  FLOAT Unknown;
-  FLOAT Unknown;
+  struct {
+    FLOAT X;
+    FLOAT Y;
+    FLOAT Z;
+  } DISPLACEMENT <name="Displacement per frame">; // x sideways, y up, z forward (was Unknown, AnimationSpeed, Speed)
+  FLOAT Unknown; // usually equals frame 0's root x
+  FLOAT Unknown; // equals frame 0's root y in the same clips
   FLOAT Unknown;
 } ANIMATION_PARAMETERS;

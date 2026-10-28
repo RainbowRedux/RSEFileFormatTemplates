@@ -1,0 +1,725 @@
+//------------------------------------------------
+// 010 Editor v7.0 Binary Template
+//
+//      File: POB(gr).bt
+//   Authors: Alexander Evdokimov
+//   Version: 1.2
+//   Purpose: Ghost Recon POB file (Mods_Model/*.pob: vehicles, skyboxes, breakables, particle effects)
+// File Mask: *.pob
+//
+//   History:
+//
+//   2026.10 v1.2 light nodes, version 2 particle nodes, root node outer header, tags split into
+//                flags/carving/surface, detail texture index with 2 texture layers, helper point frames x, y, z
+//   2019.01 v1.1
+//   2018.04 v1.0
+//   2016.12 v0.08 initial release
+//------------------------------------------------
+//
+// "BeginPOB", the model in the map layout (two headers per geometry, collision meshes and tags after the
+// helper points), "EndModel", the ObjectList scene tree, "EndPOB". Metres, Z up; frames are row vectors
+// (v' = v * M + Position), parent-relative. A type-46 node names a geometry placed at its parent's frame; a
+// node's "model=" property places one at the node's own. Skyboxes reference nothing; particle effects name
+// their fragment geometry inside the type-51 payload.
+
+typedef enum <ubyte> {
+  no = 0,
+  yes = 1
+} BOOL; // bool data type
+
+typedef struct {
+  UINT Length;
+  char Text[Length]; // may carry stale bytes after the NUL
+} CSTRING;
+
+typedef struct {
+  UINT SectionSize;
+  UINT ID;
+  struct {
+    CSTRING Name <name="Version">;
+    UINT Value;
+  } VERSION;
+  CSTRING Name <name="Name">;
+} SECTION_HEADER <name="Header">;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+} POINT2;
+
+typedef struct {
+  UINT16 x;
+  UINT16 y;
+  UINT16 z;
+} VECTOR_SHORT3;
+
+typedef struct {
+  UINT16 x;
+  UINT16 y;
+  UINT16 z;
+  UINT16 w;
+} VECTOR_SHORT4;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+} VECTOR3;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+  FLOAT w;
+} VECTOR4;
+
+typedef struct {
+  VECTOR3 X; // rows: v' = v * M + Position
+  VECTOR3 Y;
+  VECTOR3 Z;
+  VECTOR3 Position; // x, y, z (Z up)
+} TRANSFORMATION_MATRIX;
+
+//--------------------
+// File header
+// --------------------
+
+struct {
+  CSTRING Name <name="BeginPOB token">;
+  FLOAT Version <name="Version">; // 1.0
+  time_t ModifiedDate <name="Modified Date">;
+} FILE_HEADER <name="Header", fgcolor=cBlack, bgcolor=0xccff66>;
+
+struct {
+  UINT Length; //
+  char Text[Length]; //
+} BEGINMODEL_STRING <name="BeginModel token">;
+
+//--------------------
+// MATERIALLIST
+// --------------------
+
+typedef struct {
+  FLOAT Red;
+  FLOAT Green;
+  FLOAT Blue;
+  FLOAT Alpha;
+} COLOR;
+
+typedef struct {
+  SECTION_HEADER Header; // ID 2, version 2; SectionSize counts from after this header (maps: from the size field)
+  struct {
+    FLOAT Opacity;
+    UINT Unknown; // 3 in .pob and .chr (0 in maps)
+    COLOR Ambient;
+    COLOR Diffuse;
+    COLOR Specular;
+    FLOAT SpecularLevel; //o.o5
+    BOOL twoSide;
+  } PARAMETERS;
+} MATERIAL <name=MaterialName>;
+
+typedef struct {
+  SECTION_HEADER Header; // ID 38, version 2, name "NONE"; SectionSize counts from after this header
+  if (Header.VERSION.Value > 1) // absent in version 1 textures
+    BOOL Unknown; // 0
+  CSTRING Name <name="Texture .rsb file name">;
+  struct {
+    UINT TransparencyType;  // 3 in .pob
+    UINT IsTiled; // 0 or 3 in .pob (1 - u-tile, 2 - v-tile, 3 - both none)
+    FLOAT SelfIllumination; // 0
+  } PARAMETERS;
+} TEXTURE <name=TextureName>;
+
+string MaterialName(MATERIAL &material) {
+  return "Name: " + material.Header.Name.Text;
+}
+
+string TextureName(TEXTURE &texture) {
+  return "FileName: " + texture.Name.Text;
+}
+
+struct {
+  SECTION_HEADER Header; // "MaterialList", ID 8, version 3
+  UINT Count <name="Number of materials">;
+  typedef struct (int arraySize) {
+    MATERIAL array[arraySize] <optimize=false>;
+  } MATERIALS;
+  MATERIALS Materials(Count) <name="Materials">;
+  UINT Count <name="Number of textures">;
+  if (Count > 0)
+  {
+    typedef struct (int arraySize) {
+      TEXTURE array[arraySize] <optimize=false>;
+    } TEXTURES;
+    TEXTURES TextureArray(Count) <name="Textures">;
+  };
+} MATERIAL_LIST <name="Material List">;
+
+//--------------------
+// GEOMETRYLIST
+// --------------------
+
+typedef struct {
+  CSTRING Name;
+  TRANSFORMATION_MATRIX Matrix;
+} POINT <name=PointName>;
+
+string PointName (POINT &point) {
+  return "Name: " + point.Name.Text;
+};
+
+// A face group's or collision mesh's tag.
+typedef struct (uint version) {
+  CSTRING Name;
+  // Mesh flags, as in R6: 0x1 climbable, 0x2 no 2-D collision, 0x4 invisible, 0x10 floor polygon,
+  // 0x40 force floor. 0x80 also occurs: meaning unknown.
+  UBYTE Flags;
+  UBYTE Carving; // 0
+  UINT16 Unknown; // 0
+  if (version > 7)
+    UINT SurfaceProperty;  // only from geometry version 8 on; see MAP(gr).bt SURFACE_PROPERTY
+} TAGGING_OPTIONS <optimize=false>;
+
+typedef struct {
+  SECTION_HEADER OuterHeader; // ID 35
+  // ID 3; version 8, or 7 (no SurfaceProperty in the tags). SectionSize counts from
+  // after this header to the end of the helper points.
+  SECTION_HEADER Header;
+  if (Header.VERSION.Value > 6)
+  {
+    BOOL DarkMapped <name="DarkMapped">;
+    BOOL CastShadows <name="CastShadows">;
+  }
+  struct {
+    UINT Count <name="Number of vertexes">;
+    typedef struct (int arraySize) {
+      VECTOR3 array[arraySize];
+    } VERTEXES;
+    VERTEXES Vertexes(Count) <name="Vertexes">;
+  } VERTEXES_SECTION <name="Vertex section">;
+  UINT Count <name="Number of face groups">;
+  typedef struct {
+    struct {
+      BYTE Unknown; // 1
+      BYTE DetailedDarkmap;
+      BYTE DetailTexture;
+      INT MaterialIndex;
+      UINT isTextured; // texture layers: 0, 1 or 2
+      if (isTextured > 0)
+      {
+        UINT TextureIndex;
+        if (DetailTexture > 0 || isTextured > 1)
+          UINT DetailTextureIndex;
+      };
+      struct {
+        INT Unknown;
+        INT DarkmapIndex; // a texture index (darkmap<n><map>.rsb in maps); -1 unset
+        INT SpecularMap;
+        INT BumpMap;
+        INT ReflectionMap;
+        INT MapCount;
+      } MAPPING; // -1 = unset (all six in .pob)
+    } TEXTURE_PARAMETERS;
+    struct {
+      UINT Count <name="Number of faces">;
+      typedef struct (int arraySize) {
+        VECTOR4 array[arraySize];
+      } NORMALS1;
+      NORMALS1 Normals(Count) <name="Face planes">; // normal xyz (along (b-a)x(c-a)), distance
+      typedef struct (int arraySize) {
+        VECTOR_SHORT3 array[arraySize];
+      } FACE_INDEXES;
+      FACE_INDEXES FaceIndexes(Count) <name="Face indexes">; // into the geometry's vertices
+      typedef struct (int arraySize) {
+        VECTOR_SHORT3 array[arraySize];
+      } TEXTURE_INDEXES;
+      TEXTURE_INDEXES TextureIndexes(Count) <name="Vertex param indexes">; // into this group's params
+      UINT VertexCount; // vertex params (normal, uv per set, colour)
+      UINT TextureCount; // uv sets, stored set after set
+      typedef struct (int arraySize) {
+        VECTOR3 array[arraySize];
+      } NORMALS2;
+      NORMALS2 Normals(VertexCount) <name="Normals">;
+      typedef struct (int arraySize) {
+        POINT2 array[arraySize];
+      } UVs;
+      UVs TextureCoordinates(VertexCount*TextureCount) <name="Texture coordinates">;
+      typedef struct (int arraySize) {
+        COLOR array[arraySize] <optimize=false>;
+      } FACE_COLOR;
+      FACE_COLOR FaceColor(VertexCount) <name="Vertex colours">; // RGBA 0-1 per param (baked light; 0.5 on skyboxes)
+    } FACE_PARAMETERS;
+  } MESH <name="Face group">;
+  typedef struct (int arraySize) {
+    MESH array[arraySize] <optimize=false>;
+  } MESHES;
+  MESHES Meshes(Count) <name="Face groups">;
+
+  struct {
+    UINT Count;
+    typedef struct(int arraySize) {
+      POINT array[arraySize] <optimize=false>;
+    } POINTS;
+    POINTS POBPointArray(Count) <name="Points">;
+  } Points <name="Helper points">;
+
+  // Collision: its own vertex and plane lists, indexed by the collision meshes below.
+  struct {
+    struct {
+      UINT VertexCount <name="Number of vertexes">;
+      if (VertexCount > 0)
+      {
+        typedef struct (int arraySize) {
+          VECTOR3 array[arraySize];
+        } NR_VERTEXES;
+        NR_VERTEXES Vertexes(VertexCount);
+      };
+    } NON_RENDERED_VERTEXES;
+    struct {
+      UINT PlaneCount;
+      if (PlaneCount > 0)
+      {
+        typedef struct (int arraySize) {
+          VECTOR4 array[arraySize];
+        } NR_NORMALS;
+        NR_NORMALS Normals(PlaneCount); // normal xyz, distance
+      };
+    } NON_RENDERED_MESH_NORMALS;
+  } NON_RENDERED_MESHES_DATA1 <name="Non-rendered meshes data">;
+
+  struct {
+    UINT Count <name = "Tag count">; // drawn tags + collision meshes
+    UINT Count; // drawn tags: one per face group, in order
+    if (Count > 0)
+      TAGGING_OPTIONS TaggingOptions(Header.VERSION.Value)[Count];
+    UINT Count; // collision meshes
+    if (Count > 0)
+    {
+      typedef struct {
+        TAGGING_OPTIONS TagOptions(Header.VERSION.Value);
+        UINT Count <name="Number of faces">;
+        typedef struct (int arraySize) {
+          VECTOR_SHORT4 array[arraySize] <optimize=false>;
+        } NR_FACE_INDEXES;
+        NR_FACE_INDEXES FaceIndexes(Count) <name="Non-rendered face (v0, v1, v2, plane)">;
+      } NON_RENDERED_MESH;
+      typedef struct (int arraySize) {
+         NON_RENDERED_MESH array[arraySize] <optimize=false>;
+      } NON_RENDERED_MESHES_DATA2;
+      NON_RENDERED_MESHES_DATA2 NonRenderedMeshes(Count) <name="Non-rendered meshes data">;
+    };
+  } NONROBJECTS <name="Tags and non-rendered objects">;
+} OBJECT <name=ObjectName>;
+
+string ObjectName(OBJECT &Object) {
+  return "Name: " + Object.Header.Name.Text;
+}
+
+struct {
+  SECTION_HEADER Header; // "GeometryList", ID 7, version 1
+  UINT Count <name="Object Count">;
+  typedef struct (int arraySize) {
+    OBJECT array[arraySize] <optimize=false>;
+  } OBJECTS;
+  OBJECTS Objects(Count) <name="Objects">;
+} GEOMETRYLIST <name="GeometryList">;
+
+CSTRING EndModel <name="EndModel">;
+
+//------------------
+// ObjectList
+//------------------
+
+// Field names in the particle and light payloads follow the 3ds Max particle system and light parameters.
+
+typedef enum <UINT> {
+    Blizzard,
+    Snow,
+    Spray,
+    SuperSpray,
+    PArray,
+    PCloud
+} PARTICLE_SYSTEM_TYPE;
+
+// version: the node header's (3, or 2 in dust/spark/stone.pob).
+typedef struct (uint version) {
+
+  typedef struct {
+      UINT DynamicsType; // 0 - Gravitation, 2 - Pbomb (Parray)
+      switch (DynamicsType) {
+        case 0:
+          struct {
+            FLOAT MN;
+            FLOAT PbombStrength;
+            FLOAT GravDelay;
+            FLOAT MN; // 0
+            UINT MN; // 0
+            UINT MN; // 0
+            struct {
+              FLOAT Y;
+              FLOAT Z;
+            } GravRotation;
+            FLOAT GravitaionForceStrength;
+          } Some;
+          break;
+        case 2:
+          struct {
+              FLOAT Duration;
+              FLOAT Strength;
+              FLOAT Range;
+              UINT ExplosionType; // 2 - Eponential
+              //
+              struct {
+                FLOAT X;
+                FLOAT Y;
+                FLOAT Z;
+              } Position;
+              //
+              struct {
+                FLOAT X;
+                FLOAT Y;
+                FLOAT Z;
+              } Rotation;
+              //
+              UINT BlastSymmetry; // 1 - cylindrical
+              FLOAT StartTime;
+              FLOAT Chaos;
+          } Pbomb;
+          break;
+      };
+  } SPACE_WARPS;
+
+  struct {
+      UINT MN; // 1
+      UINT SpawnOnDeath; // 0 or 1
+      FLOAT MN; // 0
+      FLOAT AnimationStartTicks;
+      FLOAT AnimationLengthTicks;
+      FLOAT TicksPerSecond; // 4800, as in the keys header
+      FLOAT MN; // 0
+      BYTE MN; // 1
+      BYTE MN; // 1
+      BYTE MN; //
+      UINT MN; // 0
+   } HEADER;
+
+   PARTICLE_SYSTEM_TYPE ParticleSystemType <name="Particle System">; // 0 - blizzard, 1 - snow, 2 - Spray, 3 - SuperSpray, 4 - PArray, 5 - PCloud
+   if (version > 2) // absent in version 2 nodes
+     struct {
+       UINT Length; //
+       char Text[Length]; //
+     } PROPERTIES;
+
+   struct {
+     FLOAT Width; // IconSize
+     FLOAT Length; //
+     FLOAT Height; // 3D
+   } EMITTER_SIZE;
+
+   struct {
+      FLOAT ParticleSpeed; // Parray (units in sec) (Particle Motion Speed (units per frame) * 30)
+      FLOAT ParticleSpeedVariation; // %ParticleSpeed
+   } PARTICLE_MOTION;
+
+   struct {
+      FLOAT GrowFor; // Parray (Particle size Grow For / 30)
+      FLOAT FadeFor; // Parray (Particle size Fade For / 30)
+   } PARTICLE_Size;
+
+    struct {
+      FLOAT MN;
+      FLOAT MN;
+    } SOME;
+
+    struct {
+      FLOAT Life;
+      FLOAT LifeVariation;
+    } PARTICLE_TIMING;
+
+    struct{
+      FLOAT ParticleSize;
+      FLOAT ParticleSizeVariation;
+    } PARTICLE_SIZE;
+
+    struct {
+      FLOAT UseRate; // * 3
+      UINT UseTotal;
+    } PARTICLE_QUANTITY;
+
+    struct {
+      UINT SpinAxisControlType; // 0 - Random, 1 - direction of travel, 2- user defined
+      FLOAT XAxis;
+      FLOAT YAxis;
+      FLOAT ZAxis;
+      FLOAT Variation;
+    } SPIN_AXIS_CONTROL ;
+    //
+    FLOAT MN;
+    FLOAT MN;
+    FLOAT MN;
+    FLOAT MN;
+    FLOAT MN;
+    FLOAT MN;
+    FLOAT MN;
+    FLOAT MN;
+    FLOAT MN;
+    FLOAT MN;
+    //
+    UINT ParticleMotionType; // 0 - dir vector, 1 - random Direction
+    //
+    struct {
+      FLOAT OffAxis;
+      FLOAT Spread;
+      FLOAT OffPlane;
+      FLOAT Spread;
+    } SUPERSPRAY_PARTICLE_FORMATION;
+
+    struct {
+      FLOAT SpinTime;
+      FLOAT SpinTimeVariation;
+      FLOAT Phase;
+      FLOAT PhaseVariation;
+    } SpinSpeedControls;
+
+    UINT particleType; // 0 - standard, 2 - object fragments
+
+    struct {
+      UINT SpawnType; // 3 - spawn on death, 4 - spawn trails
+      UINT Spawns;
+    } PARTICLE_SPAWNING_EFFECTS;
+
+    FLOAT AnimationStartSeconds;
+    FLOAT AnimationLengthSeconds;
+    FLOAT AnimationStartSeconds; // time
+
+    struct {
+      FLOAT EmiStart; // time
+      FLOAT EmiStop; // time
+    } PARTICLE_TIMING;
+
+    UINT HideEmitter; // 1 - true
+
+    if (particleType == 2) {
+      UINT FragmentsCount;
+
+      typedef struct {
+        struct {
+            struct {
+              FLOAT X;
+              FLOAT Y;
+              FLOAT Z;
+            } Position;
+
+              FLOAT MN;
+              FLOAT MN;
+              FLOAT MN;
+              FLOAT MN;
+
+            struct {
+              FLOAT Y;
+              FLOAT Z;
+            } ForceVector;
+
+            FLOAT Speed;
+
+            FLOAT MN; // 0
+            FLOAT MN; // 0
+            FLOAT MN; // 5
+         } Some;
+         // An ObjectList node pair: a group (47, "NONE") with its properties, frame and one child, then a
+         // type-46 reference (SectionSize 1) naming the fragment's geometry (sedan_explode: sedan0, sedan1 ...).
+         UINT Count; // 1
+         SECTION_HEADER Header;
+         struct {
+              UINT Length;
+              char Text[Length];
+         } ObjectProperties;
+         TRANSFORMATION_MATRIX Matrix;
+         UINT Count; // 1
+         SECTION_HEADER Header;
+         BYTE A;
+      } FRAGMENT <name="Fragment object">;
+      struct {
+        FRAGMENT frg[FragmentsCount] <optimize=false>;
+      } Array <name="Fragment object Array">;
+      UINT A;
+      if (A > 0) {
+        SPACE_WARPS SpaceWarps;
+      }
+    }
+    else {
+      struct {
+        UINT UseTotal; // * PercentageOfParticles
+      } PARTICLE_QUANTITY;
+
+      BYTE isTextured;
+      if (isTextured) {
+          UINT Length;
+          char TextureName[Length];
+      }
+      UINT SPACEWARPS;
+      if (SPACEWARPS) {
+        SPACE_WARPS SpaceWarps;
+      }
+    }
+} PARTICLE_NODE_PROPERTIES;
+
+// The same keys as ANM(gr).bt.
+typedef struct {
+  struct {
+    UINT Position_OutOfRangeType; // 1 - cycle, 3 - ping-pong (0 on keyless nodes)
+    UINT Rotation_OutOfRangeType; // 1 - cycle, 3 - ping-pong
+    UINT Unknown; // 0
+    UINT16 Unknown; // 0xFFFF
+    UINT16 Unknown; // 0x7F7F
+    UINT16 Unknown; // 0
+    UINT16 Unknown; // 0x80
+    FLOAT TicksPerSecond; // 4800 (3ds Max ticks): key Time / TicksPerSecond = seconds; 1.0 on keyless nodes
+    UINT Unknown; // 0
+    BYTE Unknown; // 1
+    BYTE Unknown; // 1
+    UBYTE Unknown; // varies
+  } Prop;
+
+  UINT Count<name="Number of position keys">;
+  typedef struct
+  {
+    UINT ControllerType; // 3 - Linear Position, 5 - TCB Position
+    FLOAT Unknown; // 0
+    FLOAT Time; // ticks
+    VECTOR3 Position; // parent-relative
+
+    if (ControllerType != 3)
+    {
+      FLOAT Tension;
+      FLOAT Continuity;
+      FLOAT Bias;
+    };
+  } POSITION_KEY;
+  typedef struct (int arraySize) {
+    POSITION_KEY array[arraySize] <optimize=false>;
+  } POSITION_KEYS;
+  POSITION_KEYS PositionKeys(Count);
+
+  UINT Count <name="Number of rotation keys">;
+  typedef struct {
+    UINT ControllerType; // 4 - Linear Rotation
+    if (ControllerType == 4)
+    {
+      UINT Unknown; // 0
+      FLOAT Time; // ticks
+      UBYTE Stale[12]; // uninitialised exporter memory, no meaning
+      VECTOR4 Rotation; // quaternion x, y, z, w, parent-relative
+    }
+  } ROTATION_KEY;
+  typedef struct (int arraySize) {
+    ROTATION_KEY array[arraySize] <optimize=false>;
+  } ROTATION_KEYS;
+  ROTATION_KEYS RotationKey(Count);
+} ANIMATION_PROPERTIES;
+
+// 73 bytes for types 2 and 5.
+typedef struct{
+  UINT LightType; // 1 - directional, 2 - omni, 5 - spot, 6 - , 8 - free directional light
+  COLOR Ambient <name="Ambient color">; // (0, 0, 0, 1)
+  COLOR Diffuse <name="Diffuse color">;
+  COLOR Specular <name="Specular color">;
+  FLOAT Multiplier; // 0.5 - 3
+  struct {
+    FLOAT HotSpotSize; // spot: 0.75, 0.785 (45 degrees in radians); stale on omni lights (FLT_MAX, NaN)
+    FLOAT FalloffSize;
+  } SPOTLIGHT_PARAMS;
+  struct {
+    FLOAT Start; // 0.8
+    FLOAT End; // 2.0
+  } FAR_ATTENUATION;
+  BOOL ShadowsOff;
+  if (LightType == 8)
+  {
+    FLOAT Unknown; // 0
+    UINT LightType; // 2 - omni, 1 - directional, 0 - spot
+    UINT Unknown;  // 0
+    UINT Unknown;  // 0
+    UINT Unknown; // 1
+    FLOAT AspectRatio;
+    struct {
+      FLOAT Width; // Width * AspectRatio
+      FLOAT Length; // HotSpotSize;
+    } RECTANGILAR_BEAM_SIZE;
+    CSTRING ProjectorMapFileName;
+  }
+} LIGHT_NODE_PROPERTIES;
+
+// A node. SectionSize 1: one byte and nothing else (type 46, a reference to a geometry by name). Otherwise
+// the size counts from after the header to the end of the payload (47, 50) or of the child count (51, 53).
+// A root node's header comes twice; the outer one sizes the whole subtree.
+void NodeTree(UINT NodeCount, int rootnode)
+{
+  typedef struct (int rootnode) {
+    if (rootnode)
+      SECTION_HEADER RootHeader <name="Root node outer header">;
+    SECTION_HEADER Header;
+    if (Header.SectionSize == 1)
+      BYTE Unknown; // 0
+    else
+    {
+       if (Header.ID == 51)
+         BYTE Unknown;
+       else if (Header.ID != 53) // light nodes have no properties text
+         CSTRING Name <name = "Tags">; // properties text: "model=...\r\ncollision2d=box\r\n..."
+       TRANSFORMATION_MATRIX Matrix; // parent-relative
+
+       switch (Header.ID) {
+         case 48:
+           UINT Unknown;
+           break;
+         case 50:
+           ANIMATION_PROPERTIES AnimationProperties <name="Animation properties">;
+           break;
+         case 51:
+           PARTICLE_NODE_PROPERTIES ParticleProperties(Header.VERSION.Value) <name="Particle properties">;
+           break;
+         case 53:
+           LIGHT_NODE_PROPERTIES LightProperties <name="Light properties">;
+           break;
+       };
+       UINT Count <name="Number of child nodes">;
+       if (Count > 0)
+         NodeTree(Count, 0);
+    };
+  } NODE <name=NodeName>;
+  typedef struct (int arraySize, int rootnode) {
+    NODE array(rootnode)[arraySize] <optimize=false>;
+  } NODES;
+  NODES Nodes(NodeCount, rootnode) <name="Child nodes">;
+};
+
+string NodeName(NODE &node)
+{
+  local string NodeType;
+  switch (node.Header.ID)
+  {
+     case 46: NodeType = "Geometry reference"; break;
+     case 47: NodeType = "Group Node"; break;
+     case 48: NodeType = "Billboard Node"; break;
+     case 49: NodeType = "LOD Node"; break;
+     case 50: NodeType = "Animation Node"; break;
+     case 51: NodeType = "Particle Node"; break;
+     case 52: NodeType = "Forest Node"; break;
+     case 53: NodeType = "Light Node"; break;
+     case 54: NodeType = "ProjectedMapLight Node"; break;
+  };
+  return "Name: " + node.Header.Name.Text + " [" + NodeType + "]";
+}
+
+struct {
+  SECTION_HEADER Header; // "ObjectList"
+  struct {
+    UINT Count <name="Number of root nodes">; // 1
+    if (Count > 0)
+      NodeTree(Count, 1);
+  } NODE_TREE <name="Root node">;
+} OBJECT_LIST <name="ObjectList">;
+
+CSTRING EndModel <name="EndPOB token">;

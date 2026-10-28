@@ -1,123 +1,119 @@
 //------------------------------------------------
 //--- 010 Editor v7.0 Binary Template
 //
-//      File: ANM.bt
+//      File: ANM(gr).bt
 //   Authors: Alexander Evdokimov
-//   Version: 0.1
-//   Purpose: Ghost Recon ANM files
+//   Version: 0.2
+//   Purpose: Ghost Recon ANM files (Data_Motion/iv_*d0.anm: a wrecked vehicle's turret and body shudder)
 // File Mask: *.anm
 //
-//   History: 
-//
+//   History:
+//   2026.10 v0.2 header version, EndANM token, keys header values, ticks per second, stale key bytes
 //------------------------------------------------
-
-typedef struct { 
-  UINT Length;  
-  char Text[Length];
-} CSTRING; 
+//
+// Keys for nodes of a .pob's ObjectList, by node name: the same keys as a type-50 (animation) node in
+// POB(gr).bt and MAP(gr).bt. .anm files carry rotation keys only.
 
 typedef struct {
-  UINT SectionSize;
-  UINT ID;
-  struct {    
-    CSTRING Name <name="Version">; 
-    UINT Value;
-  } VERSION;    
-  CSTRING Name <name="Name">; 
+  UINT Length;
+  char Text[Length]; // may carry stale bytes after the NUL
+} CSTRING;
+
+typedef struct {
+  UINT SectionSize; // bytes from after this header to the end of the keys
+  UINT ID; // 50: an animation node, as in a .pob's ObjectList
+  struct {
+    CSTRING Name <name="Version">;
+    UINT Value; // 1
+  } VERSION;
+  CSTRING Name <name="Name">; // the .pob node these keys drive
 } SECTION_HEADER <name="Header">;
 
-typedef struct {     
+typedef struct {
   FLOAT x;
   FLOAT y;
   FLOAT z;
-} VECTOR3; 
+} VECTOR3;
 
-typedef struct {     
+typedef struct {
   FLOAT x;
   FLOAT y;
   FLOAT z;
-  FLOAT w;  
-} VECTOR4; 
+  FLOAT w;
+} VECTOR4;
 
 //--------------------
 // File header
 // --------------------
 
 struct {
-  CSTRING Name <name="BeginModel token">; 
-  FLOAT Version <name="Version">;
+  CSTRING Name <name="BeginANM token">;
+  FLOAT Version <name="Version">; // 1.0
   time_t ModifiedDate <name="File Modified Date">;
 } HEADER <name="File header">;
 
-UINT Count;
+UINT Count <name="Number of animated nodes">;
 
 typedef  struct {
   SECTION_HEADER Header;
+  // 31 bytes. Values in comments are the usual ones in .anm, .pob and .map key blocks.
   struct {
-    UINT Position_OutOfRangeType; // 1 - cycle, 3 - ping-pong
-    UINT Rotation_OutOfRangeType; // 1 - cycle, 3 - ping-pong
+    UINT Position_OutOfRangeType; // 1 - cycle, 3 - ping-pong (0 on keyless .pob nodes)
+    UINT Rotation_OutOfRangeType; // 1 - cycle, 3 - ping-pong (also 0)
     UINT Unknown; // 0
+    UINT16 Unknown; // 0xFFFF
+    UINT16 Unknown; // 0x7F7F
     UINT16 Unknown; // 0
-    UINT16 Unknown; // 65535
-    UINT16 Unknown; // 32639
-    UINT16 Unknown; // 128
-    FLOAT TicksinSecond; // 4800 
-    UINT Unknown; // 0 
+    UINT16 Unknown; // 0x80
+    FLOAT TicksPerSecond; // 4800 (3ds Max ticks): key Time / TicksPerSecond = seconds. 1.0 only on keyless .pob nodes
+    UINT Unknown; // 0
     BYTE Unknown; // 1
     BYTE Unknown; // 1
-    UBYTE Unknown; // ?    
+    UBYTE Unknown; // varies (0, 39, 62, 237 ...)
   } PROPERTIES;
 
-  UINT Count<name="Number of position keys">;    
-  typedef struct 
+  UINT Count<name="Number of position keys">; // 0 in .anm files
+  typedef struct
   {
     UINT ControllerType; // 3 - Linear Position, 5 - TCB Position
-    if (ControllerType == 3) 
+    FLOAT Unknown; // 0
+    FLOAT Time; // ticks (see TicksPerSecond)
+    VECTOR3 Position; // parent-relative, metres, Z up
+    if (ControllerType != 3)
     {
-      FLOAT Unknown; // 0
-      FLOAT Time;
-      VECTOR3 Position;  
-    }
-    else 
-    {
-      FLOAT Unknown; // 0
-      FLOAT Time;
-      VECTOR3 Position; 
-      FLOAT Tension;  
-      FLOAT Contunioty;
-      FLOAT Bias;         
-    };  
-  } POSITION_KEY;       
+      FLOAT Tension;
+      FLOAT Continuity;
+      FLOAT Bias;
+    };
+  } POSITION_KEY;
   typedef struct (int arraySize) {
     POSITION_KEY array[arraySize] <optimize=false>;
-  } POSITION_KEYS;     
+  } POSITION_KEYS;
   POSITION_KEYS PositionKeys(Count);
-    
+
   UINT Count <name="Number of rotation keys">;
   typedef struct {
-    UINT ControllerType; // 4 - Linear Rotation
-    if (ControllerType == 4) 
+    UINT ControllerType; // 4 - Linear Rotation (other types are not parsed)
+    if (ControllerType == 4)
     {
       UINT Unknown; // 0
-      FLOAT Time;
-      UINT Unknown;        
-      UINT Unknown;
-      UINT Unknown; 
-      VECTOR4 Rotation;
+      FLOAT Time; // ticks (see TicksPerSecond)
+      UBYTE Stale[12]; // uninitialised exporter memory, no meaning
+      VECTOR4 Rotation; // quaternion x, y, z, w, parent-relative (not always unit length)
     }
-  } ROTATION_KEY;    
+  } ROTATION_KEY;
   typedef struct (int arraySize) {
     ROTATION_KEY array[arraySize] <optimize=false>;
-  } ROTATION_KEYS;     
+  } ROTATION_KEYS;
   ROTATION_KEYS RotationKey(Count);
 } ANIMATION <name=ObjectName>;
 
 string ObjectName (ANIMATION &animation) {
   return "Object name: " + animation.Header.Name.Text;
-}; 
+};
 typedef struct (int arraySize) {
   ANIMATION array[arraySize] <optimize=false>;
-} ANIMATIONS;  
-ANIMATIONS Animations(Count) <name="Animations">; 
+} ANIMATIONS;
+ANIMATIONS Animations(Count) <name="Animations">;
 
 CSTRING Name <name="EndANM token">;

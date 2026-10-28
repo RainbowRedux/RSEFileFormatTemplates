@@ -1,0 +1,67 @@
+//------------------------------------------------
+//--- 010 Editor v7.0 Binary Template
+//
+//       File: BMF(gr).bt
+//    Authors: Alexander Evdokimov
+//    Version: 1.1
+//    Purpose: Ghost Recon BMF files (Data_Motion/*.bmf: character animation clips)
+//  File Mask: *.bmf
+//
+//   History:
+//   2026.10 v1.1 the first float is a version (2.0), not a time; key times are frame numbers
+//------------------------------------------------
+//
+// Per bone (by name) position and rotation keys for the 21-bone skeleton every .chr shares
+// (CHR(gr).bt). Rotations replace the bone's bind rotation; positions are on the root (its height,
+// ~92 cm standing, and its travel) and a few other tracks. Keys are mostly one per frame; some tracks are
+// sparse (a held pose). Units are cm, Z up, facing +X.
+
+typedef struct {
+  UINT Length;
+  char Text[Length];
+} CSTRING;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+} VECTOR3;
+
+typedef struct {
+  FLOAT x;
+  FLOAT y;
+  FLOAT z;
+  FLOAT w;
+} VECTOR4;
+
+// 2.0
+FLOAT Version;
+// Clip length in frames: the last key is at FrameCount or FrameCount - 1. Clips play at 60 frames a second.
+UINT FrameCount;
+UINT Count; // bones: 21
+
+typedef struct {
+  CSTRING Name; // the bone (SpineRoot01, Head, LToe ...)
+  UINT Count;
+  typedef struct {
+    UINT Frame; // frame number, 0..FrameCount
+    VECTOR3 Position; // parent-relative
+  } POSITION;
+  POSITION Movements[Count] <name="Positions">;
+  UINT Count;
+  typedef struct {
+    UINT Frame; // frame number, 0..FrameCount
+    VECTOR4 Rotation; // quaternion x, y, z, w, parent-relative
+  } ROTATION;
+  ROTATION RotationArray[Count] <name="Rotations">;
+} BONE_ANIMATION <name=BoneName>;
+
+string BoneName(BONE_ANIMATION &bone) {
+  return "Bone Name: " + bone.Name.Text;
+};
+
+typedef struct (int arraySize) {
+  BONE_ANIMATION array[arraySize] <optimize=false>;
+} ANIMATIONS;
+
+ANIMATIONS Animations(Count) <name = "Animations">;

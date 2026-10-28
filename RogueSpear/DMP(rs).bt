@@ -3,94 +3,100 @@
 //
 //      File: DMP.bt
 //   Authors: Philip Edwards
-//   Version: 
+//   Version: 1.1
 //   Purpose: Read DMP files containing lights for Rogue Spear maps.
-//  Category: 
-// File Mask: 
-//  ID Bytes: 
+//  Category:
+// File Mask: *.dmp
+//  ID Bytes: 02 00 00 00
 //   History: Uses a lot of preexisting structures from Alex Kimov, with modifications
+//   2026.10 v1.1 header ambient, room and light names as strings, light record fields named
 //------------------------------------------------
-struct { 
-    UINT FileID;
-    uint skipUINTs[5];
-    uint LightCount;
-    
-} HEADER <name="LIGHTList Header">;  
 
-typedef struct { 
-    FLOAT x;        
+// <map>.dmp sits beside <map>.map: Rogue Spear keeps its map lights here (the .map's LightList is empty).
+// With no .dmp the scene ambient is 0.5 grey.
+struct {
+    UINT FileID;            // always 2
+    struct {
+        FLOAT r, g, b, a;   // 0..1; if every channel is under 0.15 the game scales it so the brightest is 0.15
+    } Ambient <name="Scene Ambient (lightAmbient)">;
+    UINT Unknown;           // greater than the largest "_N" suffix of the file's light names (usually it + 1)
+    uint LightCount;
+} HEADER <name="LIGHTList Header">;
+
+typedef struct {
+    FLOAT x;
     FLOAT y;
     FLOAT z;
     FLOAT w;
   } Vec4f;
 
-typedef struct { 
-    FLOAT x;        
+typedef struct {
+    FLOAT x;
     FLOAT y;
     FLOAT z;
   } Vec3f;
 
 typedef struct {
-    Vec4f XAXIS; 
+    Vec4f XAXIS;
     Vec4f YAXIS;
     Vec4f ZAXIS;
     Vec4f WAXIS;
 } TRANSFORMATION_MATRIX_4x4;
 
 typedef struct {
-    Vec3f XAXIS; 
+    Vec3f XAXIS;
     Vec3f YAXIS;
     Vec3f ZAXIS;
-} TRANSFORMATION_MATRIX_3x3;  
+} TRANSFORMATION_MATRIX_3x3;
 
 typedef struct {
-    struct { 
-        UINT Version;
-        if (Version == 4){
-            UINT ID;
-        }
-        else {
-            SHORT ID;
-        }
-        UINT Length; // 
-        char Text[Length]; 
-        if (Text == "Version"){
-            struct {    
-                //
-                UINT value;
-                UINT Length;  
-                char Text[Length]; 
-                BYTE Y;  
-            } NAME_STRING;
-        }
-    } LIGHTHEADER <name="LightHeader">;
-    UINT unknown1;
-    Vec3f unknown2;
-    Vec3f position;
-    Vec3f unknown3;
-    //TRANSFORMATION_MATRIX_3x3 TM; 
-    Vec3f Color;
-    struct {
-        float IntensityOrDistance; // 0..255
-        Vec3f SpecularColorMaybe;
-        float MN; // 0
-        FLOAT MN; //  0
-        FLOAT MN; // 
-        FLOAT MN;
-        //BYTE Type;
-        //Check(Type, 1, "AAAAAAAAAAAAAA"); 
-    } Params;
+    FLOAT r, g, b, a;       // 0..1
+} RGBA;
 
-    char skipBytes[37];
+typedef struct {
+    UINT Length;            // including the terminating NUL
+    char Text[Length];
+} STRING <read=StringText>;
+
+string StringText(STRING &s) {
+    return s.Text;
+}
+
+// Per light: the room it belongs to, then the light's own record (121 bytes after the names).
+typedef struct {
+    STRING Room <name="Room Name">;     // e.g. "2"; the light goes into this room's list
+    STRING Name <name="Light Name">;    // e.g. "light2_2323"
+    if (Name.Text == "Version") {
+        // Versioned name, as in the template's first version
+        UINT VersionValue;
+        STRING RealName;
+        BYTE VersionByte;
+    }
+    UINT Type <name="Type">;            // 3 (most; lit as a point light), 1 or 6. 0 deletes the light at load
+    Vec3f Direction <name="Direction">;
+    Vec3f Position <name="Position">;
+    struct {
+        FLOAT Angle;        // 90 (rarely 120)
+        FLOAT Unknown48;    // always 1
+        FLOAT Unknown4C;    // always 0
+        FLOAT Unknown50;    // 0 or 1 (see the u8 at the end of the record)
+        FLOAT Unknown54;    // 1
+        FLOAT Unknown58;    // always 1
+        FLOAT Range;        // the light's radius (a point light adds Color x (1 - d^2/r^2) inside it)
+    } Params <name="f32 x7">;
+    RGBA Color1 <name="Colour 1">;      // 0.2 grey (almost always)
+    RGBA Color  <name="Light Colour">;  // the colour the game lights with (through the gamma table)
+    RGBA Color3 <name="Colour 3">;      // white
+    Vec4f Orientation <name="Quaternion">; // x y z w; (0, 0, 0, 1) is identity
+    UBYTE Unknown <name="u8">;          // 1 when Params.Unknown50 is 0, else 0
 } LIGHT <name=LightName>;
 
 string LightName(LIGHT &light) {
-    if (exists(light.LIGHTHEADER.NAME_STRING))
-        return "Name: " + light.LIGHTHEADER.NAME_STRING.Text;
+    if (exists(light.RealName))
+        return "Name: " + light.RealName.Text;
     else
-        return "Name: " + light.LIGHTHEADER.Text;
+        return "Name: " + light.Name.Text + " (room " + light.Room.Text + ")";
 };
 
 LIGHT lights[HEADER.LightCount] <optimize=false>;
-
 

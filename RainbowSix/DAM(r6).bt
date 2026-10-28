@@ -3,22 +3,28 @@
 //
 //      File: CHR.bt
 //   Authors: AlexKimov
-//   Version: 1.0
-//   Purpose: Rainbow Six DAM file
-// 
-//   History: 
+//   Version: 1.1
+//   Purpose: Rainbow Six DAM file (character animation clip, data/motion/*.DAM)
+//
+//   History:
+//   2026.10 v1.1 root position, per-bone rotations, displacement per frame
 //------------------------------------------------
+//
+// One record per frame, played at ANIMATION_FRAME_SPEED (Constants.txt 0.028333 s, 35.29 fps) with a
+// fractional frame index. Clips animate in place: the root doesn't travel.
 
-UINT FrameCount; 
+UINT FrameCount;
 
 struct {
   struct {
     UINT BonesCount; // 18
-    struct { 
+    struct {
       FLOAT A;
       FLOAT B;
       FLOAT C;
-    } POSITION;
+    } POSITION; // the root (Hips) position
+    // Per bone in skeleton index order (SKL BoneIndex), parent-relative, not conjugated:
+    // W_bone = W_parent * T(relPos) * R(q); root = T(POSITION) * R(q0)
     typedef struct {
       FLOAT X;
       FLOAT Y;
@@ -30,15 +36,20 @@ struct {
 } MOTION_DATA;
 
 struct {
-  UINT Length; // 
-  char Text[Length]; // 
+  UINT Length; // NUL included
+  char Text[Length]; //
 } Name <name="Name">;
 
 struct {
-  FLOAT Unknown;
-  FLOAT AnimationSpeed;
-  FLOAT Speed <name="in-game speed of the character">;
-  FLOAT Unknown;
-  FLOAT Unknown;
+  // Displacement per frame (x sideways, y up, z forward); times the frame rate it is the character's
+  // velocity. wk_fd (0.0045, 0.0228, 8.94), rn_fd z 15.18, wk_bk z -4.27, idle 0.
+  // (Index 1 was named "AnimationSpeed" in v1.0; it is the vertical displacement.)
+  struct {
+    FLOAT X;
+    FLOAT Y;
+    FLOAT Z;
+  } DISPLACEMENT <name="Displacement per frame">;
+  FLOAT Unknown; // usually equals frame 0's root x
+  FLOAT Unknown; // usually equals frame 0's root y
   FLOAT Unknown;
 } ANIMATION_PARAMETERS;

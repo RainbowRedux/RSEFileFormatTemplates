@@ -3,15 +3,19 @@
 //
 //      File: QOB.bt
 //   Authors: Alexander Evdokimov
-//   Version: 1.1
-//   Purpose: Ghost Recon QOB file
+//   Version: 1.3
+//   Purpose: Ghost Recon QOB file (one geometry: weapons, props, ground cover; metres, Z up)
 //
-//   History: 
+//   History:
 //
+//   2026.10 v1.3 geometry versions 4 and 6, helper points inside the geometry
 //   2019.02 v1.2
 //   2019.01 v1.1
-//   2018.11 v1.0 
+//   2018.11 v1.0
 //   2016.10 v0.2 initial release
+//
+//   A GR map's and a .pob's geometry records are the same plus a second header and collision lists
+//   (MAP(gr).bt, POB(gr).bt).
 //------------------------------------------------
 
 typedef enum <ubyte> {
@@ -19,109 +23,113 @@ typedef enum <ubyte> {
   yes = 1
 } BOOL; // bool data type
 
-typedef struct { 
-  UINT Length;  
-  char Text[Length];
-} CSTRING; 
+typedef struct {
+  UINT Length;
+  char Text[Length]; // up to the first NUL; bytes after it are stale buffer contents
+} CSTRING;
 
+// In a .qob every SectionSize counts the bytes after the name, to the record's end.
 typedef struct {
   UINT SectionSize;
   UINT ID;
-  struct {    
-    CSTRING Name <name="Version">; 
+  struct {
+    CSTRING Name <name="Version">;
     UINT Value;
-  } VERSION;    
-  CSTRING Name <name="Name">; 
+  } VERSION;
+  CSTRING Name <name="Name">;
 } SECTION_HEADER <name="Header">;
 
-typedef struct { 
+typedef struct {
   FLOAT x;
-  FLOAT y;  
+  FLOAT y;
 } POINT2;
 
-typedef struct {     
+typedef struct {
   UINT16 x;
   UINT16 y;
   UINT16 z;
-} VECTOR_SHORT; 
+} VECTOR_SHORT;
 
-typedef struct {     
+typedef struct {
   FLOAT x;
   FLOAT y;
   FLOAT z;
-} VECTOR3; 
+} VECTOR3;
 
-typedef struct {     
+typedef struct {
   FLOAT x;
   FLOAT y;
   FLOAT z;
-  FLOAT w;  
-} VECTOR4; 
+  FLOAT d;
+} PLANE;
+
+local uint GeometryVersion; // the current geometry's header version
+local ubyte GroupDetailFlag; // the current face group's DetailTexture byte
 
 //--------------------
 // File header
 // --------------------
 
-CSTRING Name <name="BeginModel">;   
+CSTRING Name <name="BeginModel">;
 
 //--------------------
 // MATERIALLIST
 // --------------------
 
 typedef struct {
-  FLOAT Red; 
-  FLOAT Green; 
-  FLOAT Blue; 
-  FLOAT Alpha;        
-} COLOR;
+  FLOAT Red;
+  FLOAT Green;
+  FLOAT Blue;
+  FLOAT Alpha;
+} COLOR; // 0-1
 
 typedef struct {
-  SECTION_HEADER Header;
-  struct { 
+  SECTION_HEADER Header; // id 2, version 2
+  struct {
     FLOAT Opacity;
-    UINT Unknown;
-    COLOR Ambient; 
-    COLOR Diffuse;   
+    UINT Unknown; // 3
+    COLOR Ambient;
+    COLOR Diffuse; // the colour of untextured faces
     COLOR Specular;
-    FLOAT SpecularLevel; //o.o5
+    FLOAT SpecularLevel;
     BOOL twoSide;
   } PARAMETERS;
 } MATERIAL <name=MaterialName>;
 
 typedef struct {
-  SECTION_HEADER Header;
+  SECTION_HEADER Header; // id 38, version 2 or 1
   if (Header.VERSION.Value > 1)
-      BOOL Unknown;
-  CSTRING Name <name="Texture .rsb file name">;   
-  struct { 
-    UINT TransparencyType;  // 0 2 3
-    UINT IsTiled; // 1 - u-tile, 2 - v-tile, 3 - both none
+      BOOL Unknown; // 0; absent in version 1
+  CSTRING Name <name="Texture .rsb file name">;
+  struct {
+    UINT TransparencyType;  // 3 or 2
+    UINT IsTiled; // 0 or 3 (1 - u-tile, 2 - v-tile, 3 - both)
     FLOAT SelfIllumination; // 0
-  } PARAMETERS; 
+  } PARAMETERS;
 } TEXTURE <name=TextureName>;
 
 string MaterialName(MATERIAL &material) {
   return "Name: " + material.Header.Name.Text;
-} 
+}
 
 string TextureName(TEXTURE &texture) {
   return "FileName: " + texture.Header.Name.Text;
-} 
+}
 
-struct {  
-  SECTION_HEADER Header;  
+struct {
+  SECTION_HEADER Header; // id 8, version 3 or 2, "MaterialList"
   UINT Count <name="Number of materials">;
   typedef struct (int arraySize) {
     MATERIAL array[arraySize] <optimize=false>;
-  } MATERIALS; 
-  MATERIALS Materials(Count) <name="Materials">; 
-  UINT Count <name="Number of textures">;
-  if (Count > 0) 
+  } MATERIALS;
+  MATERIALS Materials(Count) <name="Materials">;
+  UINT TextureCount <name="Number of textures">;
+  if (TextureCount > 0)
   {
     typedef struct (int arraySize) {
       TEXTURE array[arraySize] <optimize=false>;
-    } TEXTURES;    
-    TEXTURES TextureArray(Count) <name="Textures">; 
+    } TEXTURES;
+    TEXTURES TextureArray(TextureCount) <name="Textures">;
   };
 } MATERIAL_LIST <name="Material List">;
 
@@ -129,102 +137,8 @@ struct {
 // GEOMETRYLIST
 // --------------------
 
-struct {   
-  SECTION_HEADER Header; 
-  UINT Count <name="Number of objects">;
-  typedef struct {
-    SECTION_HEADER Header;
-    if (Header.VERSION.Value > 6)
-    {
-      BOOL DarkMapped <name="DarkMapped">; 
-      BOOL CastShadows <name="CastShadows">; 
-    };       
-    struct {
-      UINT Count <name="Number of vertexes">;    
-      typedef struct (int arraySize) {
-        VECTOR3 array[arraySize];
-      } VERTEXES;     
-      VERTEXES Vertexes(Count) <name="Vertexes">; 
-    } VERTEXES_SECTION <name="Vertex section">;
-
-    UINT Count <name="Number of meshes">; 
-    typedef struct {
-      struct {
-        if (Header.VERSION.Value > 6)
-        {
-          BYTE Unknown; // 1
-          BYTE DetailedDarkmap;
-          BYTE DetailTexture;
-        }
-        else 
-        {
-          BYTE Unknown[6];
-        }
-
-        UINT MaterialIndex;
-        UINT isTextured;
-        if (isTextured > 0) 
-        {
-          UINT TextureIndex;
-          if (DetailTexture > 0)
-            UINT DetailTextureIndex;
-        };
-        struct {
-          UINT Unknown;     
-          UINT SelfIlluminationMap;
-          UINT SpecularMap;
-          UINT BumpMap;
-          UINT ReflectionMap;
-          UINT MapCount;
-        } MAPPING;
-      } TEXTURE_PARAMETERS;
-    
-      struct {
-        UINT Count <name="Number of faces">;     
-        typedef struct (int arraySize) {
-          VECTOR4 array[arraySize];
-        } NORMALS1;          
-        NORMALS1 Normals(Count) <name="Normals??">;           
-        typedef struct (int arraySize) {
-          VECTOR_SHORT array[arraySize];
-        } FACE_INDEXES;          
-        FACE_INDEXES FaceIndexes(Count) <name="Indexes">;    
-        typedef struct (int arraySize) {
-          VECTOR_SHORT array[arraySize];
-        } TEXTURE_INDEXES;          
-        TEXTURE_INDEXES TextureIndexes(Count) <name="Indexes">;    
- 
-        UINT VertexCount;
-        UINT TextureCount;         
-        typedef struct (int arraySize) {
-          VECTOR3 array[arraySize];
-        } NORMALS2;       
-        NORMALS2 Normals(VertexCount) <name="Normals">;        
-        typedef struct (int arraySize) {
-          POINT2 array[arraySize];
-        } UVs;        
-        UVs TextureCoordinates(VertexCount*TextureCount) <name="Texture coordinates">;           
-        typedef struct (int arraySize) {
-          COLOR array[arraySize] <optimize=false>;
-        } FACE_COLOR; 
-        FACE_COLOR FaceColor(VertexCount) <name="Faces colors">; 
-      } FACE_PARAMETERS;   
-    } MESH <name="Mesh">;
-    typedef struct (int arraySize) {
-      MESH array[arraySize] <optimize=false>;
-    } MESHES;     
-    MESHES Meshes(Count) <name="Meshes">; 
-  } OBJECT;
-  typedef struct (int arraySize) {
-    OBJECT array[arraySize] <optimize=false>;
-  } OBJECTS;     
-  OBJECTS Objects(Count) <name="Objects">;   
-} GEOMETRY_LIST  <name="Geometry List">;
-
-//--------------------
-// POINTS
-// --------------------
-
+// A helper point (RightHandPoint, LeftHandPoint, MuzzleFlashPoint, BrassEjectionPoint, BackBlastPoint,
+// effect anchors): v' = v * (X; Y; Z) + Position, the matrix stored as row vectors.
 typedef struct {
   CSTRING Name;
   struct {
@@ -235,20 +149,128 @@ typedef struct {
   } TRANSFORMATION_MATRIX;
 } POINT <name=pointName>;
 
-struct {
-  UINT PointCount;
-  if (PointCount > 0) 
-  {   
-    typedef struct (int arraySize) {
-      POINT array[arraySize] <optimize=false>; 
-    } POINTS <optimize=false>;   
-    POINTS Points(PointCount) <optimize=false, name="Points">; 
-  };
-} POINT_LIST <name="Point List">;
-
-string pointName(POINT &point) 
+string pointName(POINT &point)
 {
   return "Name: " + point.Name.Text;
-} 
+}
+
+// A face group: faces of one (material, texture) pair, with their own vertex params.
+typedef struct {
+  GroupDetailFlag = 0;
+  struct {
+    if (GeometryVersion > 6)
+    {
+      BYTE Unknown; // 1
+      BYTE DetailedDarkmap;
+      BYTE DetailTexture;
+      GroupDetailFlag = DetailTexture;
+    }
+    else if (GeometryVersion > 4)
+    {
+      BYTE Unknown[6]; // versions 5 and 6: 01 00 00 00 00 00
+    };
+    // version 4: no flag bytes
+
+    UINT MaterialIndex;
+    UINT TextureCount; // texture layers: 0 or 1 in .qob
+    if (TextureCount > 0)
+      UINT TextureIndex;
+    if (TextureCount > 0 && (GroupDetailFlag > 0 || TextureCount > 1))
+      UINT DetailTextureIndex;
+    if (GeometryVersion > 4)
+    {
+      // 0xFFFFFFFF: unset
+      struct {
+        UINT Unknown;
+        UINT DarkMap; // a texture index
+        UINT SpecularMap;
+        UINT BumpMap;
+        UINT ReflectionMap;
+        UINT MapCount;
+      } MAPPING;
+    }
+    else
+      UINT Map; // version 4: one index, 0xFFFFFFFF
+  } TEXTURE_PARAMETERS;
+
+  struct {
+    UINT Count <name="Number of faces">;
+    typedef struct (int arraySize) {
+      PLANE array[arraySize];
+    } PLANES;
+    PLANES Planes(Count) <name="Face planes">;
+    typedef struct (int arraySize) {
+      VECTOR_SHORT array[arraySize];
+    } FACE_INDEXES;
+    FACE_INDEXES FaceIndexes(Count) <name="Vertex indexes">; // into the geometry's vertexes
+    typedef struct (int arraySize) {
+      VECTOR_SHORT array[arraySize];
+    } PARAM_INDEXES;
+    PARAM_INDEXES ParamIndexes(Count) <name="Param indexes">; // into this group's params
+
+    UINT ParamCount;
+    UINT UVSetCount; // with a detail texture the sets are (texture, detail); dark-mapped: (darkmap, texture)
+    typedef struct (int arraySize) {
+      VECTOR3 array[arraySize];
+    } NORMALS;
+    NORMALS Normals(ParamCount) <name="Normals">;
+    typedef struct (int arraySize) {
+      POINT2 array[arraySize];
+    } UVs;
+    UVs TextureCoordinates(ParamCount*UVSetCount) <name="Texture coordinates">; // set after set
+    typedef struct (int arraySize) {
+      COLOR array[arraySize] <optimize=false>;
+    } PARAM_COLOR;
+    PARAM_COLOR Colors(ParamCount) <name="Param colors">; // RGBA 0-1
+  } FACE_PARAMETERS;
+} MESH <name="Face group">;
+
+struct {
+  SECTION_HEADER Header; // id 7, version 1 "GeometryList"
+  UINT Count <name="Number of objects">; // 1
+  typedef struct {
+    // id 3; version 8, 7, 6 or 4.
+    // Size: from after this header to the end of the helper points.
+    SECTION_HEADER Header;
+    GeometryVersion = Header.VERSION.Value;
+    if (GeometryVersion > 6)
+    {
+      BOOL DarkMapped <name="DarkMapped">;
+      BOOL CastShadows <name="CastShadows">;
+    };
+    struct {
+      UINT Count <name="Number of vertexes">;
+      typedef struct (int arraySize) {
+        VECTOR3 array[arraySize];
+      } VERTEXES;
+      VERTEXES Vertexes(Count) <name="Vertexes">;
+    } VERTEXES_SECTION <name="Vertex section">;
+
+    UINT Count <name="Number of face groups">;
+    typedef struct (int arraySize) {
+      MESH array[arraySize] <optimize=false>;
+    } MESHES;
+    MESHES Meshes(Count) <name="Face groups">;
+
+    if (GeometryVersion > 4)
+    {
+      // Helper points; none in version 4.
+      struct {
+        UINT PointCount;
+        if (PointCount > 0)
+        {
+          typedef struct (int arraySize) {
+            POINT array[arraySize] <optimize=false>;
+          } POINTS <optimize=false>;
+          POINTS Points(PointCount) <optimize=false, name="Points">;
+        };
+      } POINT_LIST <name="Point List">;
+    };
+  } OBJECT;
+  typedef struct (int arraySize) {
+    OBJECT array[arraySize] <optimize=false>;
+  } OBJECTS;
+  OBJECTS Objects(Count) <name="Objects">;
+} GEOMETRY_LIST  <name="Geometry List">;
 
 CSTRING Name <name="EndModel">;
